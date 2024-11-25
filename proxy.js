@@ -8,6 +8,7 @@
 import _ from "lodash";
 import axios from "axios";
 import sharp from "sharp";
+import { availableParallelism } from 'os';
 
 const { pick } = _;
 const DEFAULT_QUALITY = 40;
@@ -63,7 +64,7 @@ function compress(req, res, input) {
 
   sharp.cache(false);
   sharp.simd(true);
-  sharp.concurrency(require("os").availableParallelism());
+  sharp.concurrency(availableParallelism());
 
   const sharpInstance = sharp({
     unlimited: true,
