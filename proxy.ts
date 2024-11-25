@@ -1,9 +1,13 @@
 "use strict";
 
+/*
+ * proxy.js
+ * The bandwidth hero proxy handler with integrated modules.
+ */
+
 import _ from "lodash";
-import axios, { AxiosResponse } from "axios";
+import axios from "axios";
 import sharp from "sharp";
-import { Request, Response } from "express";
 
 const { pick } = _;
 const DEFAULT_QUALITY = 40;
@@ -11,21 +15,17 @@ const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
 // Helper: Should compress
-function shouldCompress(req: Request): boolean {
-  const { originType, originSize, webp } = req.params as {
-    originType: string;
-    originSize: string;
-    webp: boolean;
-  };
+function shouldCompress(req) {
+  const { originType, originSize, webp } = req.params;
 
   if (!originType.startsWith("image")) return false;
-  if (Number(originSize) === 0) return false;
+  if (originSize === 0) return false;
   if (req.headers.range) return false;
-  if (webp && Number(originSize) < MIN_COMPRESS_LENGTH) return false;
+  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
   if (
     !webp &&
     (originType.endsWith("png") || originType.endsWith("gif")) &&
-    Number(originSize) < MIN_TRANSPARENT_COMPRESS_LENGTH
+    originSize < MIN_TRANSPARENT_COMPRESS_LENGTH
   ) {
     return false;
   }
@@ -34,31 +34,31 @@ function shouldCompress(req: Request): boolean {
 }
 
 // Helper: Copy headers
-function copyHeaders(source: AxiosResponse, target: Response): void {
+function copyHeaders(source, target) {
   for (const [key, value] of Object.entries(source.headers)) {
     try {
-      target.setHeader(key, value as string);
+      target.setHeader(key, value);
     } catch (e) {
-      console.error((e as Error).message);
+      console.log(e.message);
     }
   }
 }
 
 // Helper: Redirect
-function redirect(req: Request, res: Response): void {
+function redirect(req, res) {
   if (res.headersSent) return;
 
-  res.setHeader("content-length", "0");
+  res.setHeader("content-length", 0);
   res.removeHeader("cache-control");
   res.removeHeader("expires");
   res.removeHeader("date");
   res.removeHeader("etag");
-  res.setHeader("location", encodeURI(req.params.url as string));
+  res.setHeader("location", encodeURI(req.params.url));
   res.status(302).end();
 }
 
 // Helper: Compress
-function compress(req: Request, res: Response, input: AxiosResponse): void {
+function compress(req, res, input) {
   const format = "jpeg";
 
   sharp.cache(false);
@@ -77,20 +77,17 @@ function compress(req: Request, res: Response, input: AxiosResponse): void {
         .resize(null, 16383, {
           withoutEnlargement: true,
         })
-        .grayscale(req.params.grayscale === "true")
+        .grayscale(req.params.grayscale)
         .toFormat(format, {
-          quality: parseInt(req.params.quality, 10),
+          quality: req.params.quality,
           effort: 0,
         })
         .on("error", () => redirect(req, res))
         .on("info", (info) => {
           res.setHeader("content-type", "image/" + format);
-          res.setHeader("content-length", info.size.toString());
-          res.setHeader("x-original-size", req.params.originSize as string);
-          res.setHeader(
-            "x-bytes-saved",
-            (Number(req.params.originSize) - info.size).toString()
-          );
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
           res.status(200);
         })
     )
@@ -98,20 +95,21 @@ function compress(req: Request, res: Response, input: AxiosResponse): void {
 }
 
 // Main: Proxy
-function proxy(req: Request, res: Response): void {
-  let url = req.query.url as string;
+function proxy(req, res) {
+  // Extract and validate parameters from the request
+  let url = req.query.url;
   if (!url) return res.send("bandwidth-hero-proxy");
 
-  req.params = {
-    url: decodeURIComponent(url),
-    webp: !(req.query.jpeg as boolean),
-    grayscale: req.query.bw !== "0",
-    quality: parseInt(req.query.l as string, 10) || DEFAULT_QUALITY,
-  };
+  req.params = {};
+  req.params.url = decodeURIComponent(url);
+  req.params.webp = !req.query.jpeg;
+  req.params.grayscale = req.query.bw != 0;
+  req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
 
+  // Avoid loopback that could cause server hang.
   if (
     req.headers["via"] === "1.1 bandwidth-hero" &&
-    ["127.0.0.1", "::1"].includes((req.headers["x-forwarded-for"] as string) || req.ip)
+    ["127.0.0.1", "::1"].includes(req.headers["x-forwarded-for"] || req.ip)
   ) {
     return redirect(req, res);
   }
@@ -125,29 +123,33 @@ function proxy(req: Request, res: Response): void {
         via: "1.1 bandwidth-hero",
       },
       responseType: "stream",
-      maxRedirects: 4,
+      maxRedirections: 4,
     })
     .then((origin) => {
-      if (origin.status >= 400 || (origin.status >= 300 && origin.headers.location)) {
+      // Handle non-2xx or redirect responses.
+      if (
+        origin.status >= 400 ||
+        (origin.status >= 300 && origin.headers.location)
+      ) {
         return redirect(req, res);
       }
 
+      // Set headers and stream response.
       copyHeaders(origin, res);
       res.setHeader("content-encoding", "identity");
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
       res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
-
       req.params.originType = origin.headers["content-type"] || "";
       req.params.originSize = origin.headers["content-length"] || "0";
 
       if (shouldCompress(req)) {
         compress(req, res, origin);
       } else {
-        res.setHeader("x-proxy-bypass", "1");
+        res.setHeader("x-proxy-bypass", 1);
         ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
           if (origin.headers[header]) {
-            res.setHeader(header, origin.headers[header] as string);
+            res.setHeader(header, origin.headers[header]);
           }
         });
         origin.data.pipe(res);
