@@ -82,7 +82,7 @@ function compress(req, res, input) {
         .toFormat(format, {
           quality: req.params.quality,
           chromaSubsampling: '4:4:4',
-          //effort: 0,
+          effort: 0,
         })
         .on("error", () => redirect(req, res))
         .on("info", (info) => {
