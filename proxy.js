@@ -76,7 +76,7 @@ function compress(req, res, input) {
     .pipe(
       sharpInstance
         .resize(null, 16383, {
-          fit: 'inside',
+        //  fit: 'inside',
           withoutEnlargement: true,
         })
         .grayscale(req.params.grayscale)
