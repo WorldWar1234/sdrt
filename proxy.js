@@ -160,8 +160,8 @@ async function proxy(req, res) {
     if (err.code === "ERR_INVALID_URL") {
       return res.status(400).send("Invalid URL");
     }
-    console.error(err);
     redirect(req, res);
+    console.error(err);
   }
 }
 
