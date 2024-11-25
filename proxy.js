@@ -117,9 +117,8 @@ async function proxy(req, res) {
     return redirect(req, res);
   }
 
-  try {
-    // Fetch the resource using axios.
-    let origin = await axios.get(req.params.url, {
+  axios
+    .get(req.params.url, {
       headers: {
         ..._.pick(req.headers, ["cookie", "dnt", "referer", "range"]),
         "user-agent": "Bandwidth-Hero Compressor",
@@ -128,41 +127,42 @@ async function proxy(req, res) {
       },
       responseType: "stream",
       maxRedirections: 4,
+    })
+    .then(origin => {
+      // Handle non-2xx or redirect responses.
+      if (origin.status >= 400 || (origin.status >= 300 && origin.headers.location)) {
+        return redirect(req, res);
+      }
+
+      // Set headers and stream response.
+      copyHeaders(origin, res);
+      res.setHeader("content-encoding", "identity");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+      req.params.originType = origin.headers["content-type"] || "";
+      req.params.originSize = origin.headers["content-length"] || "0";
+
+      if (shouldCompress(req)) {
+        compress(req, res, origin);
+      } else {
+        res.setHeader("x-proxy-bypass", 1);
+        ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
+          if (origin.headers[header]) {
+            res.setHeader(header, origin.headers[header]);
+          }
+        });
+        origin.data.pipe(res);
+      }
+    })
+    .catch(err => {
+      // Inline error handling.
+      if (err.code === "ERR_INVALID_URL") {
+        return res.status(400).send("Invalid URL");
+      }
+      console.error(err);
+      redirect(req, res);
     });
-
-    // Handle successful response.
-    if (origin.status >= 400 || (origin.status >= 300 && origin.headers.location)) {
-      return redirect(req, res);
-    }
-
-    copyHeaders(origin, res);
-    res.setHeader("content-encoding", "identity");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
-    req.params.originType = origin.headers["content-type"] || "";
-    req.params.originSize = origin.headers["content-length"] || "0";
-
-    if (shouldCompress(req)) {
-      return compress(req, res, origin);
-    } else {
-      res.setHeader("x-proxy-bypass", 1);
-      ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-        if (origin.headers[header]) {
-          res.setHeader(header, origin.headers[header]);
-        }
-      });
-
-      return origin.data.pipe(res);
-    }
-  } catch (err) {
-    // Inline error handling.
-    if (err.code === "ERR_INVALID_URL") {
-      return res.status(400).send("Invalid URL");
-    }
-    redirect(req, res);
-    console.error(err);
-  }
 }
 
 export { proxy };
