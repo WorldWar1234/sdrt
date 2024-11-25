@@ -2,10 +2,10 @@
   "version": 2,
   "name": "vercel-bhero-test",
   "builds": [
-    { "src": "server.ts", "use": "@vercel/node" }
+    { "src": "server.js", "use": "@vercel/node" }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "/dist/server.js" }
+    { "src": "/(.*)", "dest": "/server.js" }
   ],
   "regions": ["bom1"]
 }
