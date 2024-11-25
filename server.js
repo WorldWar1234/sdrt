@@ -1,4 +1,4 @@
-import app from "./index";
+import app from "./index.js";
 import http from "http";
 
 const PORT = process.env.PORT || 8080;
