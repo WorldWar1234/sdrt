@@ -84,7 +84,7 @@ function compress(req, res, input) {
          // chromaSubsampling: '4:4:4',
           effort: 0,
     // progressive: true, // Enable progressive JPEG
-     // chromaSubsampling: '4:4:4', // Default chroma subsampling
+      chromaSubsampling: '4:4:4', // Default chroma subsampling
       
         })
         .on("error", () => redirect(req, res))
