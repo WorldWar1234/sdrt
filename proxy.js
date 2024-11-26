@@ -83,13 +83,9 @@ function compress(req, res, input) {
           quality: req.params.quality,
          // chromaSubsampling: '4:4:4',
           effort: 0,
-     progressive: true, // Enable progressive JPEG
-      chromaSubsampling: '4:4:4', // Default chroma subsampling
-      optimiseCoding: true, // Optimise Huffman coding tables
-      trellisQuantisation: false, // Disable trellis quantisation to reduce CPU usage
-      overshootDeringing: false, // Disable overshoot deringing to reduce CPU usage
-      optimiseScans: false, // Disable optimisation of progressive scans to reduce CPU usage
-      quantisationTable: 0
+    // progressive: true, // Enable progressive JPEG
+     // chromaSubsampling: '4:4:4', // Default chroma subsampling
+      
         })
         .on("error", () => redirect(req, res))
         .on("info", (info) => {
