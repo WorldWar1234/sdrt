@@ -120,7 +120,7 @@ function compress(req, res, input) {
   axios
     .get(req.params.url, {
       headers: {
-        ..._.pick(req.headers, ["cookie", "dnt", "referer", "range"]),
+        ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
         "user-agent": "Bandwidth-Hero Compressor",
         "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
         via: "1.1 bandwidth-hero",
