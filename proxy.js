@@ -4,13 +4,11 @@
  * proxy.js
  * The bandwidth hero proxy handler with integrated modules.
  */
-
-import _ from "lodash";
 import axios from "axios";
 import sharp from "sharp";
 import { availableParallelism } from 'os';
 
-const { pick } = _;
+import pick from "./pick.js";
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
