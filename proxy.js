@@ -147,7 +147,7 @@ function compress(req, res, input) {
       req.params.originSize = origin.headers["content-length"] || "0";
 
       if (shouldCompress(req)) {
-        compress(req, res, origin);
+        return compress(req, res, origin);
       } else {
         res.setHeader("x-proxy-bypass", 1);
         ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
@@ -155,7 +155,7 @@ function compress(req, res, input) {
             res.setHeader(header, origin.headers[header]);
           }
         });
-        origin.data.pipe(res);
+       return origin.data.pipe(res);
       }
     })
     .catch((err) => {
