@@ -82,7 +82,7 @@ function compress(req, res, input) {
         .toFormat(format, {
           quality: req.params.quality,
          // chromaSubsampling: '4:4:4',
-          //effort: 0,
+          effort: 0,
      progressive: true, // Enable progressive JPEG
       chromaSubsampling: '4:4:4', // Default chroma subsampling
       optimiseCoding: true, // Optimise Huffman coding tables
