@@ -184,4 +184,4 @@ function _onRequestResponse(origin, req, res) {
   }
 }
 
-export { proxy };
+export default proxy;
