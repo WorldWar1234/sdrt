@@ -97,7 +97,7 @@ function compress(req, res, input) {
 }
 
 // Main: Proxy
-async function proxy(req, res) {
+ function proxy(req, res) {
   // Extract and validate parameters from the request
   let url = req.query.url;
   if (!url) return res.send("bandwidth-hero-proxy");
