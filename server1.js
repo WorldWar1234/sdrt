@@ -1,10 +1,10 @@
 "use strict";
 
 import Koa from "koa";
-import proxy from "./proxy.js";
+import proxy from "./proxy1.js";
 
 const app = new Koa();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // Middleware to handle favicon requests
 app.use(async (ctx, next) => {
