@@ -125,6 +125,7 @@ function proxy(req, res) {
       via: "1.1 bandwidth-hero",
     },
     method: 'GET',
+    rejectUnauthorized: false // Disable SSL verification
   };
 
   const requestModule = parsedUrl.protocol === 'https:' ? https : http;
