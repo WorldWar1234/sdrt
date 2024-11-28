@@ -6,7 +6,7 @@ const pick = (object, properties) => {
       picked[key] = object[key];
     }
   }
-  return picked; difference with yours
+  return picked;
 };
 
 export default pick;
