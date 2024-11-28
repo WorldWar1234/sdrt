@@ -1,27 +1,27 @@
 "use strict";
 
-import Koa from "koa";
-import proxy from "./proxy1.js";
+import http from "http";
+import url from "url";
+import proxy from "./proxy.js";
 
-const app = new Koa();
 const PORT = process.env.PORT || 8080;
 
-// Middleware to handle favicon requests
-app.use(async (ctx, next) => {
-  if (ctx.path === "/favicon.ico") {
-    ctx.status = 204;
+// Create the HTTP server
+const server = http.createServer((req, res) => {
+  const parsedUrl = url.parse(req.url, true);
+
+  // Handle favicon requests
+  if (parsedUrl.pathname === "/favicon.ico") {
+    res.statusCode = 204;
+    res.end();
     return;
   }
-  await next();
-});
 
-// Route to handle proxy requests
-app.use(async (ctx) => {
-  ctx.req.query = ctx.query;
-  proxy(ctx.req, ctx.res);
+  // Use the proxy function to handle the request
+  proxy(req, res);
 });
 
 // Start the server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
