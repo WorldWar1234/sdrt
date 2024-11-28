@@ -1,14 +1,12 @@
+ // Picks specific properties from an object
 const pick = (object, properties) => {
-  const picked = {};
-  object = object || {};
-
-  properties.forEach(key => {
-    if (Object.hasOwnProperty.call(object, key)) {
+  let picked = {};
+  for (let key in object || (object = {})) {
+    if (Object.hasOwnProperty.call(object, key) && properties.includes(key)) {
       picked[key] = object[key];
     }
-  });
-
-  return picked;
+  }
+  return picked; difference with yours
 };
 
 export default pick;
