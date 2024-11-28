@@ -8,11 +8,9 @@ import http from "http";
 import https from "https";
 import sharp from "sharp";
 import { availableParallelism } from 'os';
-import { pipeline, PassThrough, Transform } from 'stream';
-import { promisify } from 'util';
+import { PassThrough } from 'stream';
 import pick from "./pick.js";
 
-const pipelinePromise = promisify(pipeline);
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
@@ -62,7 +60,7 @@ function redirect(req, res) {
 }
 
 // Helper: Compress
-async function compress(req, res, input) {
+function compress(req, res, input) {
   const format = "jpeg";
 
   sharp.cache(false);
@@ -76,16 +74,9 @@ async function compress(req, res, input) {
   });
 
   const passThroughStream = new PassThrough();
-  const transformStream = new Transform({
-    transform(chunk, encoding, callback) {
-      this.push(chunk);
-      callback();
-    }
-  });
 
-  try {
-    await pipelinePromise(
-      input,
+  input
+    .pipe(
       sharpInstance
         .resize(null, 16383, {
           withoutEnlargement: true
@@ -103,20 +94,15 @@ async function compress(req, res, input) {
           res.setHeader("x-original-size", req.params.originSize);
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
           res.statusCode = 200;
-        }),
-      transformStream,
-      passThroughStream
-    );
+        })
+    )
+    .pipe(passThroughStream);
 
-    passThroughStream.pipe(res);
-  } catch (err) {
-    console.error('Pipeline failed.', err);
-    redirect(req, res);
-  }
+  passThroughStream.pipe(res);
 }
 
 // Main: Proxy
-async function proxy(req, res) {
+function proxy(req, res) {
   // Extract and validate parameters from the request
   let url = req.query.url;
   if (!url) return res.end("bandwidth-hero-proxy");
