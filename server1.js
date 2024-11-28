@@ -1,16 +1,14 @@
-import Koa from 'koa';
-import proxy from './proxy.js';  // Import the proxy handler
+// server.js
+import http from 'http';
+import proxy from './proxy1.js';
 
-const app = new Koa();
+const PORT = process.env.PORT || 8080;
 
-// Handle all GET requests at the root path ("/")
-app.use(async (ctx) => {
-  // Call the proxy handler defined in proxy.js
-  await proxy(ctx);
+const server = http.createServer((req, res) => {
+  // Pass the request to the proxy handler
+  proxy(req, res);
 });
 
-// Start the server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
 });
