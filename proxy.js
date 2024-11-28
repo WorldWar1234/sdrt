@@ -11,12 +11,12 @@ const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
 // Helper: Should compress
-function shouldCompress(req) {
-  const { originType, originSize, webp } = req.params;
+function shouldCompress(ctx) {
+  const { originType, originSize, webp } = ctx.params;
 
   if (!originType.startsWith("image")) return false;
   if (originSize === 0) return false;
-  if (req.headers.range) return false;
+  if (ctx.headers.range) return false;
   if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
   if (
     !webp &&
@@ -82,6 +82,7 @@ function compress(ctx, input) {
         })
         .on("error", () => redirect(ctx))
         .on("info", (info) => {
+          if (ctx.response.headersSent) return;
           ctx.set("content-type", "image/" + format);
           ctx.set("content-length", info.size);
           ctx.set("x-original-size", ctx.params.originSize);
@@ -159,9 +160,13 @@ async function proxy(ctx, next) {
 
   originReq.on('error', (err) => {
     if (err.code === 'ERR_INVALID_URL') {
-      return ctx.status = 400, ctx.body = "Invalid URL";
+      if (!ctx.response.headersSent) {
+        ctx.status = 400;
+        ctx.body = "Invalid URL";
+      }
+    } else {
+      redirect(ctx);
     }
-    redirect(ctx);
     console.error(err);
   });
 
