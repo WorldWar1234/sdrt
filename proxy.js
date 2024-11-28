@@ -1,3 +1,4 @@
+// proxy.js
 import http from 'http';
 import https from 'https';
 import sharp from 'sharp';
@@ -10,7 +11,7 @@ const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
 // Helper: Should compress
 function shouldCompress(ctx) {
-  const { originType, originSize, webp } = ctx.params;
+  const { originType, originSize, webp } = ctx.request.params;
 
   if (!originType.startsWith("image")) return false;
   if (originSize === 0) return false;
@@ -40,22 +41,21 @@ function copyHeaders(source, target) {
 
 // Helper: Redirect
 function redirect(ctx) {
-  const { response, request } = ctx;
-  if (response.headersSent) return;
+  if (ctx.res.headersSent) return;
 
-  response.set('content-length', 0);
-  response.remove('cache-control');
-  response.remove('expires');
-  response.remove('date');
-  response.remove('etag');
-  response.set('location', encodeURI(request.query.url));
-  response.status = 302;
-  response.end();
+  ctx.set("content-length", 0);
+  ctx.remove("cache-control");
+  ctx.remove("expires");
+  ctx.remove("date");
+  ctx.remove("etag");
+  ctx.set("location", encodeURI(ctx.request.params.url));
+  ctx.status = 302;
+  ctx.body = null;
 }
 
-// Helper: Compress using stream
-function compress(ctx, originRes) {
-  const format = 'jpeg';
+// Helper: Compress
+function compress(ctx, input) {
+  const format = "jpeg";
 
   sharp.cache(false);
   sharp.simd(true);
@@ -63,65 +63,64 @@ function compress(ctx, originRes) {
 
   const sharpInstance = sharp({
     unlimited: true,
-    failOn: 'none',
+    failOn: "none",
     limitInputPixels: false,
   });
 
-  originRes
+  input
     .pipe(
       sharpInstance
-        .resize(null, 16383, { withoutEnlargement: true })
-        .grayscale(ctx.request.query.bw !== '0')
+        .resize(null, 16383, {
+          withoutEnlargement: true
+        })
+        .grayscale(ctx.request.params.grayscale)
         .toFormat(format, {
-          quality: ctx.request.query.l || DEFAULT_QUALITY,
+          quality: ctx.request.params.quality,
           chromaSubsampling: '4:4:4',
           effort: 0,
         })
-        .on('error', () => redirect(ctx)) // Redirect on sharp error
-        .on('info', (info) => {
-          // On successful processing, set the response headers
-          ctx.response.set('content-type', `image/${format}`);
-          ctx.response.set('content-length', info.size);
-          ctx.response.set('x-original-size', ctx.params.originSize);
-          ctx.response.set('x-bytes-saved', ctx.params.originSize - info.size);
-          ctx.response.status = 200;
+        .on("error", () => redirect(ctx))
+        .on("info", (info) => {
+          ctx.set("content-type", "image/" + format);
+          ctx.set("content-length", info.size);
+          ctx.set("x-original-size", ctx.request.params.originSize);
+          ctx.set("x-bytes-saved", ctx.request.params.originSize - info.size);
+          ctx.status = 200;
         })
     )
-    .pipe(ctx.response);  // Pipe the stream directly to the Koa response
+    .pipe(ctx.res);
 }
 
-// Main: Proxy handler
-async function proxy(ctx) {
+// Main: Proxy
+function proxy(ctx, next) {
+  // Extract and validate parameters from the request
   let url = ctx.request.query.url;
-  if (!url) {
-    ctx.body = 'bandwidth-hero-proxy';
-    return;
-  }
+  if (!url) return ctx.body = "bandwidth-hero-proxy";
 
-  ctx.params = {};
-  ctx.params.url = decodeURIComponent(url);
-  ctx.params.webp = !ctx.request.query.jpeg;
-  ctx.params.grayscale = ctx.request.query.bw !== '0';
-  ctx.params.quality = parseInt(ctx.request.query.l, 10) || DEFAULT_QUALITY;
+  ctx.request.params = {};
+  ctx.request.params.url = decodeURIComponent(url);
+  ctx.request.params.webp = !ctx.request.query.jpeg;
+  ctx.request.params.grayscale = ctx.request.query.bw != 0;
+  ctx.request.params.quality = parseInt(ctx.request.query.l, 10) || DEFAULT_QUALITY;
 
   // Avoid loopback that could cause server hang.
   if (
-    ctx.request.headers['via'] === '1.1 bandwidth-hero' &&
-    ['127.0.0.1', '::1'].includes(ctx.request.ip)
+    ctx.request.headers["via"] === "1.1 bandwidth-hero" &&
+    ["127.0.0.1", "::1"].includes(ctx.request.headers["x-forwarded-for"] || ctx.request.ip)
   ) {
     return redirect(ctx);
   }
 
-  const parsedUrl = new URL(ctx.params.url);
+  const parsedUrl = new URL(ctx.request.params.url);
   const options = {
     headers: {
-      ...pick(ctx.request.headers, ['cookie', 'dnt', 'referer', 'range']),
-      'user-agent': 'Bandwidth-Hero Compressor',
-      'x-forwarded-for': ctx.request.ip,
-      via: '1.1 bandwidth-hero',
+      ...pick(ctx.request.headers, ["cookie", "dnt", "referer", "range"]),
+      "user-agent": "Bandwidth-Hero Compressor",
+      "x-forwarded-for": ctx.request.headers["x-forwarded-for"] || ctx.request.ip,
+      via: "1.1 bandwidth-hero",
     },
     method: 'GET',
-    rejectUnauthorized: false, // Disable SSL verification
+    rejectUnauthorized: false // Disable SSL verification
   };
 
   const requestModule = parsedUrl.protocol === 'https:' ? https : http;
@@ -135,39 +134,25 @@ async function proxy(ctx) {
       return redirect(ctx);
     }
 
-    // Set headers and stream response
+    // Set headers and stream response.
     copyHeaders(originRes, ctx.response);
-    ctx.response.set('content-encoding', 'identity');
-    ctx.response.set('Access-Control-Allow-Origin', '*');
-    ctx.response.set('Cross-Origin-Resource-Policy', 'cross-origin');
-    ctx.response.set('Cross-Origin-Embedder-Policy', 'unsafe-none');
-    ctx.params.originType = originRes.headers['content-type'] || '';
-    ctx.params.originSize = originRes.headers['content-length'] || '0';
+ctx.set("content-encoding", "identity");
+ctx.set("Access-Control-Allow-Origin", "*");
+ctx.set("Cross-Origin-Resource-Policy", "cross-origin");
+ctx.set("Cross-Origin-Embedder-Policy", "require-corp");
+ctx.set("Timing-Allow-Origin", "*");
+ctx.remove("accept-ranges");
 
-    if (shouldCompress(ctx)) {
-      return compress(ctx, originRes);
-    } else {
-      ctx.response.set('x-proxy-bypass', 1);
-      ['accept-ranges', 'content-type', 'content-length', 'content-range'].forEach((header) => {
-        if (originRes.headers[header]) {
-          ctx.response.set(header, originRes.headers[header]);
-        }
-      });
-      return originRes.pipe(ctx.response);
-    }
-  });
-
-  originReq.on('error', (err) => {
-    if (err.code === 'ERR_INVALID_URL') {
-      ctx.response.status = 400;
-      ctx.body = 'Invalid URL';
-      return;
-    }
-    redirect(ctx);
-    console.error(err);
-  });
-
-  originReq.end();
+if (shouldCompress(ctx)) {
+  compress(ctx, originRes);
+} else {
+  originRes.pipe(ctx.res);
 }
-
+}).on("error", (err) => {
+console.error(`Proxy error: ${err}`);
+ctx.status = 500;
+ctx.body = "Proxy Server Error";
+});
+originReq.end();
+}
 export default proxy;
