@@ -1,15 +1,12 @@
-// server.js
-import http from 'http';
-import Koa from 'koa';
-import proxy from './proxy.js';
+import Koa from "koa";
+import proxy from "./proxy.js";
 
+// Create Koa app and use the proxy middleware
 const app = new Koa();
-
 app.use(proxy);
 
-const server = http.createServer(app.callback());
-const port = 8080;
-
-server.listen(port, () => {
-  console.log(`Proxy server listening on port ${port}`);
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Koa server is running on port ${PORT}`);
 });
