@@ -11,7 +11,7 @@
     "start": "node server1.js"
   },
   "dependencies": {
-    "koa": "2.15.3",
+    "express": "5.0.1",
     "sharp": "0.33.5"
   },
   "engines": {
