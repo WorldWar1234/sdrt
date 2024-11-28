@@ -1,25 +1,20 @@
-"use strict";
-
-/*
- * proxy.js
- * The bandwidth hero proxy handler with integrated modules.
- */
-import axios from "axios";
-import sharp from "sharp";
+import http from 'http';
+import https from 'https';
+import sharp from 'sharp';
 import { availableParallelism } from 'os';
+import pick from './pick.js';
 
-import pick from "./pick.js";
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
 // Helper: Should compress
-function shouldCompress(req) {
-  const { originType, originSize, webp } = req.params;
+function shouldCompress(ctx) {
+  const { originType, originSize, webp } = ctx.params;
 
   if (!originType.startsWith("image")) return false;
   if (originSize === 0) return false;
-  if (req.headers.range) return false;
+  if (ctx.request.headers.range) return false;
   if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
   if (
     !webp &&
@@ -36,7 +31,7 @@ function shouldCompress(req) {
 function copyHeaders(source, target) {
   for (const [key, value] of Object.entries(source.headers)) {
     try {
-      target.setHeader(key, value);
+      target.set(key, value);
     } catch (e) {
       console.log(e.message);
     }
@@ -44,21 +39,23 @@ function copyHeaders(source, target) {
 }
 
 // Helper: Redirect
-function redirect(req, res) {
-  if (res.headersSent) return;
+function redirect(ctx) {
+  const { response, request } = ctx;
+  if (response.headersSent) return;
 
-  res.setHeader("content-length", 0);
-  res.removeHeader("cache-control");
-  res.removeHeader("expires");
-  res.removeHeader("date");
-  res.removeHeader("etag");
-  res.setHeader("location", encodeURI(req.params.url));
-  res.status(302).end();
+  response.set('content-length', 0);
+  response.remove('cache-control');
+  response.remove('expires');
+  response.remove('date');
+  response.remove('etag');
+  response.set('location', encodeURI(request.query.url));
+  response.status = 302;
+  response.end();
 }
 
-// Helper: Compress
-function compress(req, res, input) {
-  const format = "jpeg";
+// Helper: Compress using stream
+function compress(ctx, originRes) {
+  const format = 'jpeg';
 
   sharp.cache(false);
   sharp.simd(true);
@@ -66,105 +63,111 @@ function compress(req, res, input) {
 
   const sharpInstance = sharp({
     unlimited: true,
-    failOn: "none",
+    failOn: 'none',
     limitInputPixels: false,
   });
 
-  input.data
+  originRes
     .pipe(
       sharpInstance
-        .resize(null, 16383, {
-          withoutEnlargement: true
-        })
-        .grayscale(req.params.grayscale)
+        .resize(null, 16383, { withoutEnlargement: true })
+        .grayscale(ctx.request.query.bw !== '0')
         .toFormat(format, {
-          quality: req.params.quality,
-         // chromaSubsampling: '4:4:4',
+          quality: ctx.request.query.l || DEFAULT_QUALITY,
+          chromaSubsampling: '4:4:4',
           effort: 0,
-    // progressive: true, // Enable progressive JPEG
-      chromaSubsampling: '4:4:4', // Default chroma subsampling
-      
         })
-        .on("error", () => redirect(req, res))
-        .on("info", (info) => {
-          res.setHeader("content-type", "image/" + format);
-          res.setHeader("content-length", info.size);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-          res.status(200);
+        .on('error', () => redirect(ctx)) // Redirect on sharp error
+        .on('info', (info) => {
+          // On successful processing, set the response headers
+          ctx.response.set('content-type', `image/${format}`);
+          ctx.response.set('content-length', info.size);
+          ctx.response.set('x-original-size', ctx.params.originSize);
+          ctx.response.set('x-bytes-saved', ctx.params.originSize - info.size);
+          ctx.response.status = 200;
         })
     )
-    .pipe(res);
+    .pipe(ctx.response);  // Pipe the stream directly to the Koa response
 }
 
-// Main: Proxy
- function proxy(req, res) {
-  // Extract and validate parameters from the request
-  let url = req.query.url;
-  if (!url) return res.send("bandwidth-hero-proxy");
+// Main: Proxy handler
+async function proxy(ctx) {
+  let url = ctx.request.query.url;
+  if (!url) {
+    ctx.body = 'bandwidth-hero-proxy';
+    return;
+  }
 
-  req.params = {};
-  req.params.url = decodeURIComponent(url);
-  req.params.webp = !req.query.jpeg;
-  req.params.grayscale = req.query.bw != 0;
-  req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
+  ctx.params = {};
+  ctx.params.url = decodeURIComponent(url);
+  ctx.params.webp = !ctx.request.query.jpeg;
+  ctx.params.grayscale = ctx.request.query.bw !== '0';
+  ctx.params.quality = parseInt(ctx.request.query.l, 10) || DEFAULT_QUALITY;
 
   // Avoid loopback that could cause server hang.
   if (
-    req.headers["via"] === "1.1 bandwidth-hero" &&
-    ["127.0.0.1", "::1"].includes(req.headers["x-forwarded-for"] || req.ip)
+    ctx.request.headers['via'] === '1.1 bandwidth-hero' &&
+    ['127.0.0.1', '::1'].includes(ctx.request.ip)
   ) {
-    return redirect(req, res);
+    return redirect(ctx);
   }
 
-  axios
-    .get(req.params.url, {
-      headers: {
-        ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-        "user-agent": "Bandwidth-Hero Compressor",
-        "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
-        via: "1.1 bandwidth-hero",
-      },
-      responseType: "stream",
-      maxRedirections: 4,
-    })
-    .then((origin) => {
-      // Handle non-2xx or redirect responses.
-      if (
-        origin.status >= 400 ||
-        (origin.status >= 300 && origin.headers.location)
-      ) {
-        return redirect(req, res);
-      }
+  const parsedUrl = new URL(ctx.params.url);
+  const options = {
+    headers: {
+      ...pick(ctx.request.headers, ['cookie', 'dnt', 'referer', 'range']),
+      'user-agent': 'Bandwidth-Hero Compressor',
+      'x-forwarded-for': ctx.request.ip,
+      via: '1.1 bandwidth-hero',
+    },
+    method: 'GET',
+    rejectUnauthorized: false, // Disable SSL verification
+  };
 
-      // Set headers and stream response.
-      copyHeaders(origin, res);
-      res.setHeader("content-encoding", "identity");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-      res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
-      req.params.originType = origin.headers["content-type"] || "";
-      req.params.originSize = origin.headers["content-length"] || "0";
+  const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
-      if (shouldCompress(req)) {
-        return compress(req, res, origin);
-      } else {
-        res.setHeader("x-proxy-bypass", 1);
-        ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
-          if (origin.headers[header]) {
-            res.setHeader(header, origin.headers[header]);
-          }
-        });
-       return origin.data.pipe(res);
-      }
-    })
-    .catch((err) => {
-      if (err.code === "ERR_INVALID_URL") {
-        return res.status(400).send("Invalid URL");
-      }
-      redirect(req, res);
-      console.error(err);
-    });
+  const originReq = requestModule.request(parsedUrl, options, (originRes) => {
+    // Handle non-2xx or redirect responses.
+    if (
+      originRes.statusCode >= 400 ||
+      (originRes.statusCode >= 300 && originRes.headers.location)
+    ) {
+      return redirect(ctx);
+    }
+
+    // Set headers and stream response
+    copyHeaders(originRes, ctx.response);
+    ctx.response.set('content-encoding', 'identity');
+    ctx.response.set('Access-Control-Allow-Origin', '*');
+    ctx.response.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    ctx.response.set('Cross-Origin-Embedder-Policy', 'unsafe-none');
+    ctx.params.originType = originRes.headers['content-type'] || '';
+    ctx.params.originSize = originRes.headers['content-length'] || '0';
+
+    if (shouldCompress(ctx)) {
+      return compress(ctx, originRes);
+    } else {
+      ctx.response.set('x-proxy-bypass', 1);
+      ['accept-ranges', 'content-type', 'content-length', 'content-range'].forEach((header) => {
+        if (originRes.headers[header]) {
+          ctx.response.set(header, originRes.headers[header]);
+        }
+      });
+      return originRes.pipe(ctx.response);
+    }
+  });
+
+  originReq.on('error', (err) => {
+    if (err.code === 'ERR_INVALID_URL') {
+      ctx.response.status = 400;
+      ctx.body = 'Invalid URL';
+      return;
+    }
+    redirect(ctx);
+    console.error(err);
+  });
+
+  originReq.end();
 }
 
 export default proxy;
