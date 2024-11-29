@@ -7,5 +7,5 @@
   "routes": [
     { "src": "/(.*)", "dest": "/server1.js" }
   ],
-  "regions": ["bom1"]
+  "regions": ["arn1"]
 }
