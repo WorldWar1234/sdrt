@@ -8,7 +8,6 @@ import http from "http";
 import https from "https";
 import sharp from "sharp";
 import { availableParallelism } from 'os';
-import { PassThrough } from 'stream';
 import pick from "./pick.js";
 
 const DEFAULT_QUALITY = 40;
@@ -63,6 +62,7 @@ function redirect(req, res) {
 function compress(req, res, input) {
   const format = "webp";
 
+  // Configure Sharp settings
   sharp.cache(false);
   sharp.simd(true);
   sharp.concurrency(availableParallelism());
@@ -73,8 +73,7 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  const passThroughStream = new PassThrough();
-
+  // Directly pipe the sharp output to the response
   input
     .pipe(
       sharpInstance
@@ -84,11 +83,11 @@ function compress(req, res, input) {
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
-         // chromaSubsampling: '4:4:4',
           effort: 0,
         })
-        .on("error", () => redirect(req, res))
+        .on("error", () => redirect(req, res)) // Handle errors in the pipeline
         .on("info", (info) => {
+          // Set headers based on the transformed image
           res.setHeader("content-type", "image/" + format);
           res.setHeader("content-length", info.size);
           res.setHeader("x-original-size", req.params.originSize);
@@ -96,10 +95,9 @@ function compress(req, res, input) {
           res.statusCode = 200;
         })
     )
-    .pipe(passThroughStream);
-
-  passThroughStream.pipe(res);
+    .pipe(res); // Directly pipe to the response stream
 }
+
 
 // Main: Proxy
 function proxy(req, res) {

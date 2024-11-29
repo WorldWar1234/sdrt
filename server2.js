@@ -1,7 +1,6 @@
 "use strict";
 
 import express from "express";
-import compression from "compression";
 import helmet from "helmet";
 import proxy from "./proxy1.js";
 
@@ -10,9 +9,6 @@ const PORT = process.env.PORT || 8080;
 
 // Use Helmet to secure your app
 app.use(helmet());
-
-// Use compression to compress response bodies
-app.use(compression());
 
 // Middleware to parse JSON and URL-encoded data
 app.use(express.json());

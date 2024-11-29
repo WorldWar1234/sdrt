@@ -8,12 +8,11 @@
   "author": "JhonySingh",
   "license": "Mozilla Public License 2.0",
   "scripts": {
-    "start": "node server2.js"
+    "start": "node server1.js"
   },
   "dependencies": {
     "express": "4.21.1",
     "helmet": "8.0.0",
-    "compression": "1.7.5",
     "sharp": "0.33.5"
   },
   "engines": {
