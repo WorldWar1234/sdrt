@@ -19,21 +19,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Middleware to handle favicon requests
-app.get("/favicon.ico", (req, res) => {
-  res.status(204).end();
-});
-
-
-// Use the proxy function to handle all other requests
-app.use((req, res) => {
-  proxy(req, res);
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send("Something broke!");
-});
+app.get('/', proxy)
+app.get('/favicon.ico', (req, res) => res.status(204).end())
 
 // Start the server
 app.listen(PORT, () => {
