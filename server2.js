@@ -4,6 +4,8 @@ import express from "express";
 import compression from "compression";
 import helmet from "helmet";
 import proxy from "./proxy1.js";
+import cluster from "cluster";
+import os from "os";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -35,7 +37,21 @@ app.use((err, req, res, next) => {
   res.status(500).send("Something broke!");
 });
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+// Clustering for multi-core systems
+if (cluster.isMaster) {
+  const numCPUs = os.cpus().length;
+  console.log(`Master ${process.pid} is running`);
+
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
+
+  cluster.on("exit", (worker, code, signal) => {
+    console.log(`Worker ${worker.process.pid} died`);
+  });
+} else {
+  // Start the server
+  app.listen(PORT, () => {
+    console.log(`Worker ${process.pid} started, Server is running on port ${PORT}`);
+  });
+}
