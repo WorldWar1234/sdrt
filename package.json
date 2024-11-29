@@ -8,9 +8,10 @@
   "author": "JhonySingh",
   "license": "Mozilla Public License 2.0",
   "scripts": {
-    "start": "node server1.js"
+    "start": "node server2.js"
   },
   "dependencies": {
+    "express": "4.21.1",
     "sharp": "0.33.5"
   },
   "engines": {
