@@ -7,12 +7,15 @@
 import http from "http";
 import https from "https";
 import sharp from "sharp";
+import { availableParallelism } from 'os';
 import { PassThrough } from 'stream';
 import pick from "./pick.js";
+import UserAgent from 'user-agents';
 
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
+const HIGH_WATER_MARK = 2 * 1024 * 1024; // 2MB
 
 // Helper: Should compress
 function shouldCompress(req) {
@@ -42,6 +45,9 @@ function copyHeaders(source, target) {
       console.log(e.message);
     }
   }
+  // Set a random User-Agent header
+  const userAgent = new UserAgent();
+  target.setHeader("User-Agent", userAgent.toString());
 }
 
 // Helper: Redirect
@@ -63,17 +69,16 @@ function compress(req, res, input) {
   const format = "jpeg";
 
   sharp.cache(false);
-  sharp.simd(false);
-  sharp.concurrency(1);
+  sharp.simd(true);
+  sharp.concurrency(availableParallelism());
 
   const sharpInstance = sharp({
-    animated: false,
     unlimited: true,
     failOn: "none",
     limitInputPixels: false,
   });
 
-  const passThroughStream = new PassThrough();
+  const passThroughStream = new PassThrough({ highWaterMark: HIGH_WATER_MARK });
 
   input
     .pipe(
@@ -84,9 +89,6 @@ function compress(req, res, input) {
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
-         // progressive: true,
-         // optimizeScans: true,
-         // chromaSubsampling: '4:2:0',
           effort: 0
         })
         .on("error", () => redirect(req, res))
@@ -124,12 +126,13 @@ function proxy(req, res) {
   }
 
   const parsedUrl = new URL(req.params.url);
+  const userAgent = new UserAgent();
   const options = {
     headers: {
       ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-      "user-agent": "Bandwidth-Hero Compressor",
-      "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
-      via: "1.1 bandwidth-hero",
+      "User-Agent": userAgent.toString(), // Use a random user agent
+      "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
+      "Via": "1.1 myapp-hero",
     },
     method: 'GET',
     rejectUnauthorized: false // Disable SSL verification
@@ -164,7 +167,7 @@ function proxy(req, res) {
           res.setHeader(header, originRes.headers[header]);
         }
       });
-      return originRes.pipe(res);
+      return originRes.pipe(res, { highWaterMark: HIGH_WATER_MARK });
     }
   });
 
@@ -172,8 +175,9 @@ function proxy(req, res) {
     if (err.code === 'ERR_INVALID_URL') {
       return res.statusCode = 400, res.end("Invalid URL");
     }
-    redirect(req, res);
     console.error(err);
+    redirect(req, res);
+    
   });
 
   originReq.end();
