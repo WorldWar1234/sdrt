@@ -44,9 +44,7 @@ function copyHeaders(source, target) {
       console.log(e.message);
     }
   }
-  // Set a random User-Agent header
-  const userAgent = new UserAgent();
-  target.setHeader("User-Agent", userAgent.toString());
+
 }
 
 // Helper: Redirect
@@ -65,7 +63,6 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
-  const userAgent = new UserAgent();
 
   const format = "webp";
 
@@ -98,7 +95,6 @@ function compress(req, res, input) {
           res.setHeader("content-length", info.size);
           res.setHeader("x-original-size", req.params.originSize);
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-          res.setHeader("User-Agent", userAgent.toString());
           res.statusCode = 200;
         })
     )
