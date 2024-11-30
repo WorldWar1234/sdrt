@@ -8,6 +8,7 @@ import http from "http";
 import https from "https";
 import sharp from "sharp";
 import { availableParallelism } from 'os';
+import { PassThrough } from 'stream';
 import pick from "./pick.js";
 
 const DEFAULT_QUALITY = 40;
@@ -60,9 +61,8 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
-  const format = "webp";
+  const format = "jpeg";
 
-  // Configure Sharp settings
   sharp.cache(false);
   sharp.simd(true);
   sharp.concurrency(availableParallelism());
@@ -73,7 +73,8 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  // Directly pipe the sharp output to the response
+  const passThroughStream = new PassThrough();
+
   input
     .pipe(
       sharpInstance
@@ -83,11 +84,13 @@ function compress(req, res, input) {
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
-          effort: 0,
+         // progressive: true,
+         // optimizeScans: true,
+         // chromaSubsampling: '4:2:0',
+          effort: 0
         })
-        .on("error", () => redirect(req, res)) // Handle errors in the pipeline
+        .on("error", () => redirect(req, res))
         .on("info", (info) => {
-          // Set headers based on the transformed image
           res.setHeader("content-type", "image/" + format);
           res.setHeader("content-length", info.size);
           res.setHeader("x-original-size", req.params.originSize);
@@ -95,19 +98,19 @@ function compress(req, res, input) {
           res.statusCode = 200;
         })
     )
-    .pipe(res); // Directly pipe to the response stream
-}
+    .pipe(passThroughStream);
 
+  passThroughStream.pipe(res);
+}
 
 // Main: Proxy
 function proxy(req, res) {
   // Extract and validate parameters from the request
   let url = req.query.url;
   if (!url) return res.end("bandwidth-hero-proxy");
-  const cleanedUrl = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
 
   req.params = {};
-  req.params.url = decodeURIComponent(cleanedUrl);
+  req.params.url = decodeURIComponent(url);
   req.params.webp = !req.query.jpeg;
   req.params.grayscale = req.query.bw != 0;
   req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
