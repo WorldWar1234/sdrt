@@ -7,7 +7,6 @@
 import http from "http";
 import https from "https";
 import sharp from "sharp";
-import { availableParallelism } from 'os';
 import { PassThrough } from 'stream';
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
@@ -69,8 +68,8 @@ function compress(req, res, input) {
   const format = "jpeg";
 
   sharp.cache(false);
-  sharp.simd(true);
-  sharp.concurrency(availableParallelism());
+  sharp.simd(false);
+  sharp.concurrency(1);
 
   const sharpInstance = sharp({
     unlimited: true,
@@ -111,21 +110,22 @@ function proxy(req, res) {
   let url = req.query.url;
   if (!url) return res.send("bandwidth-hero-proxy");
 
+  // Modify the URL to ensure it uses HTTP
+  url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
   req.params = {};
-  req.params.url = decodeURIComponent(url);
+  req.params.url = url;
   req.params.webp = !req.query.jpeg;
   req.params.grayscale = req.query.bw != 0;
   req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
 
   // Avoid loopback that could cause server hang.
   if (
-    req.headers["via"] === "1.1 bandwidth-hero" &&
+    req.headers["via"] === "1.1 myapp-hero" &&
     ["127.0.0.1", "::1"].includes(req.headers["x-forwarded-for"] || req.ip)
   ) {
     return redirect(req, res);
   }
 
-  const parsedUrl = new URL(req.params.url);
   const userAgent = new UserAgent();
   const options = {
     headers: {
@@ -138,9 +138,8 @@ function proxy(req, res) {
     rejectUnauthorized: false // Disable SSL verification
   };
 
-  const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
-  const originReq = requestModule.request(parsedUrl, options, (originRes) => {
+  let originReq = http.request(req.params.url, options, (originRes) => {
     // Handle non-2xx or redirect responses.
     if (
       originRes.statusCode >= 400 ||
