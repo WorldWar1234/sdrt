@@ -7,7 +7,6 @@
 import http from "http";
 import https from "https";
 import sharp from "sharp";
-import { availableParallelism } from 'os';
 import { PassThrough } from 'stream';
 import pick from "./pick.js";
 
@@ -64,10 +63,11 @@ function compress(req, res, input) {
   const format = "jpeg";
 
   sharp.cache(false);
-  sharp.simd(true);
-  sharp.concurrency(availableParallelism());
+  sharp.simd(false);
+  sharp.concurrency(1);
 
   const sharpInstance = sharp({
+    animated: false,
     unlimited: true,
     failOn: "none",
     limitInputPixels: false,
