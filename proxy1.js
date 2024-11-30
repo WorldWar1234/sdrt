@@ -167,7 +167,7 @@ function proxy(req, res) {
           res.setHeader(header, originRes.headers[header]);
         }
       });
-      return originRes.pipe(res, { highWaterMark: HIGH_WATER_MARK });
+      return originRes.pipe(res);
     }
   });
 
