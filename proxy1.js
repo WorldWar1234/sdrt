@@ -5,6 +5,7 @@
  * The bandwidth hero proxy handler with integrated modules.
  */
 import http from "http";
+import https from "https";
 import sharp from "sharp";
 import { PassThrough } from 'stream';
 import pick from "./pick.js";
@@ -109,8 +110,8 @@ function proxy(req, res) {
   let url = req.query.url;
   if (!url) return res.send("bandwidth-hero-proxy");
 
-  // Convert the URL to ensure it uses HTTP
-  url = url.replace(/https:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
+  // Modify the URL to ensure it uses HTTPS
+  url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'https://');
   req.params = {};
   req.params.url = url;
   req.params.webp = !req.query.jpeg;
@@ -137,7 +138,9 @@ function proxy(req, res) {
     rejectUnauthorized: false // Disable SSL verification
   };
 
-  let originReq = http.request(req.params.url, options, (originRes) => {
+  const protocol = url.startsWith('https') ? https : http;
+
+  let originReq = protocol.request(req.params.url, options, (originRes) => {
     // Handle non-2xx or redirect responses.
     if (
       originRes.statusCode >= 400 ||
