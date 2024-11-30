@@ -5,7 +5,6 @@
  * The bandwidth hero proxy handler with integrated modules.
  */
 import http from "http";
-import https from "https";
 import sharp from "sharp";
 import { PassThrough } from 'stream';
 import pick from "./pick.js";
