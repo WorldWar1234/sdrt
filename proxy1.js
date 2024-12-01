@@ -63,7 +63,7 @@ function redirect(req, res) {
 // Helper: Compress
 function compress(req, res, input) {
 
-  const format = "webp";
+  const format = "jpeg";
 
   sharp.cache(false);
   sharp.simd(false);
