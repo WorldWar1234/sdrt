@@ -70,9 +70,10 @@ function compress(req, res, input) {
   sharp.concurrency(1);
 
   const sharpInstance = sharp({
+    animated: false,
     unlimited: true,
     failOn: "none",
-    limitInputPixels: false,
+    limitInputPixels: false
   });
 
   const passThroughStream = new PassThrough();
@@ -80,12 +81,13 @@ function compress(req, res, input) {
     .pipe(
       sharpInstance
         .resize(null, 16383, {
-          fit: 'inside',
           withoutEnlargement: true
         })
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
+          progressive: true,
+          optimizeScans:true
          // effort: 0
         })
         .on("error", () => redirect(req, res))
