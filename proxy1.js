@@ -64,7 +64,7 @@ function redirect(req, res) {
 // Helper: Compress
 function compress(req, res, input) {
 
-  const format = "heif";
+  const format = "avif";
 
   sharp.cache(false);
   sharp.simd(false);
@@ -87,8 +87,7 @@ function compress(req, res, input) {
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
-          compression: 'av1',
-         // effort: 0
+          effort: 0
         })
         .on("error", () => redirect(req, res))
         .on("info", (info) => {
