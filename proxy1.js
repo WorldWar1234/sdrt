@@ -87,6 +87,7 @@ function compress(req, res, input) {
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
+          progressive: true,
           optimizeCoding: false,
           optimizeCoding: false,
           chromaSubsampling: '4:2:0'
