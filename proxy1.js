@@ -63,7 +63,7 @@ function redirect(req, res) {
 // Helper: Compress
 function compress(req, res, input) {
 
-  const format = "jpeg";
+  const format = "webp";
 
   sharp.cache(false);
   sharp.simd(false);
@@ -85,8 +85,8 @@ function compress(req, res, input) {
         })
         .grayscale(req.params.grayscale)
         .toFormat(format, {
-          quality: req.params.quality,
-          progressive: true
+          //quality: req.params.quality,
+        //  progressive: true
          // effort: 0
         })
         .on("error", () => redirect(req, res))
