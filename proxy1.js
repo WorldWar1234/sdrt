@@ -14,7 +14,7 @@ import UserAgent from 'user-agents';
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
-const HIGH_WATER_MARK = 2 * 1024 * 1024; // 2MB
+//const HIGH_WATER_MARK = 2 * 1024 * 1024; // 2MB
 
 // Helper: Should compress
 function shouldCompress(req) {
@@ -76,7 +76,7 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  const passThroughStream = new PassThrough({ highWaterMark: HIGH_WATER_MARK });
+  const passThroughStream = new PassThrough();
 
   input
     .pipe(
