@@ -64,7 +64,7 @@ function redirect(req, res) {
 // Helper: Compress
 function compress(req, res, input) {
 
-  const format = "jxl";
+  const format = "jp2";
 
   sharp.cache(false);
   sharp.simd(false);
