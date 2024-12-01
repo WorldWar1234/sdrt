@@ -14,7 +14,7 @@ import UserAgent from 'user-agents';
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
-//const HIGH_WATER_MARK = 2 * 1024 * 1024; // 2MB
+//const HIGH_WATER_MARK = 512 * 1024; // 0.5MB
 
 // Helper: Should compress
 function shouldCompress(req) {
@@ -64,7 +64,7 @@ function redirect(req, res) {
 // Helper: Compress
 function compress(req, res, input) {
 
-  const format = "jpeg";
+  const format = "jxl";
 
   sharp.cache(false);
   sharp.simd(false);
