@@ -89,8 +89,8 @@ function compress(req, res, input) {
           quality: req.params.quality,
           progressive: true,
           optimiseScans: false, 
-          optimizeCoding: true,
-          optimizeCoding: true,
+          optimizeCoding: false,
+          optimizeCoding: false,
           chromaSubsampling: '4:2:0'
           //effort: 0
         })
