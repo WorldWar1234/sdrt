@@ -2,7 +2,7 @@
 
 /*
  * proxy.j
- * The bandwidth hero proxy handler with integrated modules.
+ * The badwidth hero proxy handler with integrated modules.
  */
 import http from "http";
 import https from "https";
