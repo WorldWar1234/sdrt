@@ -1,11 +1,15 @@
 "use strict";
 
+/*
+ * proxy.js
+ * The bandwidth hero proxy handler with integrated modules.
+ */
 import http from "http";
 import https from "https";
 import sharp from "sharp";
+import { availableParallelism } from 'os';
 import { PassThrough } from 'stream';
 import pick from "./pick.js";
-import UserAgent from 'user-agents';
 
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
@@ -39,7 +43,6 @@ function copyHeaders(source, target) {
       console.log(e.message);
     }
   }
-
 }
 
 // Helper: Redirect
@@ -58,12 +61,11 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
-
-  const format = "webp";
+  const format = "jpeg";
 
   sharp.cache(false);
-  sharp.simd(false);
-  sharp.concurrency(1);
+  sharp.simd(true);
+  sharp.concurrency(availableParallelism());
 
   const sharpInstance = sharp({
     unlimited: true,
@@ -72,15 +74,20 @@ function compress(req, res, input) {
   });
 
   const passThroughStream = new PassThrough();
+
   input
     .pipe(
       sharpInstance
         .resize(null, 16383, {
+          fit: 'inside',
           withoutEnlargement: true
         })
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
+         // progressive: true,
+         // optimizeScans: true,
+         // chromaSubsampling: '4:2:0',
           effort: 0
         })
         .on("error", () => redirect(req, res))
@@ -97,43 +104,46 @@ function compress(req, res, input) {
   passThroughStream.pipe(res);
 }
 
-
-function hhproxy(req, res) {
+// Main: Proxy
+function proxy(req, res) {
   // Extract and validate parameters from the request
   let url = req.query.url;
-  if (!url) return res.send("ban");
+  if (!url) return res.end("bandwidth-hero-proxy");
 
-  // Modify the URL to ensure it uses HTTPS
-  url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'https://');
+  // Replace the URL pattern
+  url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
+
+  // Set request parameters
   req.params = {};
-  req.params.url = url;
+  req.params.url = decodeURIComponent(url);
   req.params.webp = !req.query.jpeg;
   req.params.grayscale = req.query.bw != 0;
   req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
 
   // Avoid loopback that could cause server hang.
   if (
-    req.headers["via"] === "1.1 myapp-hero" &&
+    req.headers["via"] === "1.1 bandwidth-hero" &&
     ["127.0.0.1", "::1"].includes(req.headers["x-forwarded-for"] || req.ip)
   ) {
     return redirect(req, res);
   }
 
-  const userAgent = new UserAgent();
+  const parsedUrl = new URL(req.params.url);
   const options = {
     headers: {
       ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-      "User-Agent": userAgent.toString(), // Use a random user agent
-      "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
-      "Via": "1.1 myapp-hero",
+      "user-agent": "Bandwidth-Hero Compressor",
+      "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
+      via: "1.1 bandwidth-hero",
     },
     method: 'GET',
     rejectUnauthorized: false // Disable SSL verification
   };
 
-  const protocol = url.startsWith('https') ? https : http;
+  // Always use http module
+  const requestModule = http;
 
-  let originReq = protocol.request(req.params.url, options, (originRes) => {
+  const originReq = requestModule.request(parsedUrl, options, (originRes) => {
     // Handle non-2xx or redirect responses.
     if (
       originRes.statusCode >= 400 ||
@@ -165,11 +175,14 @@ function hhproxy(req, res) {
   });
 
   originReq.on('error', (err) => {
-    console.error(err);
+    if (err.code === 'ERR_INVALID_URL') {
+      return res.statusCode = 400, res.end("Invalid URL");
+    }
     redirect(req, res);
+    console.error(err);
   });
 
   originReq.end();
 }
 
-export default hhproxy;
+export default proxy;
