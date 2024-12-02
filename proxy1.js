@@ -61,7 +61,7 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
-  const format = "webp";
+  const format = "jpeg";
 
   sharp.cache(false);
   sharp.simd(true);
@@ -73,8 +73,6 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  const passThroughStream = new PassThrough();
-
   input
     .pipe(
       sharpInstance
@@ -85,9 +83,9 @@ function compress(req, res, input) {
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
-         // progressive: true,
-         // optimizeScans: true,
-         // chromaSubsampling: '4:2:0',
+          // progressive: true,
+          // optimizeScans: true,
+          // chromaSubsampling: '4:2:0',
           effort: 0
         })
         .on("error", () => redirect(req, res))
@@ -99,11 +97,14 @@ function compress(req, res, input) {
           res.statusCode = 200;
         })
     )
-  //.pipe(res);
-    .pipe(passThroughStream);
-
-  passThroughStream.pipe(res);
+    .on('data', (chunk) => {
+      res.write(chunk);
+    })
+    .on('end', () => {
+      res.end();
+    });
 }
+
 
 // Main: Proxy
 function hhproxy(req, res) {
