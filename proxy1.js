@@ -8,7 +8,7 @@ import http from "http";
 import https from "https";
 import sharp from "sharp";
 import { availableParallelism } from 'os';
-//import { PassThrough } from 'stream';
+import { PassThrough } from 'stream';
 import pick from "./pick.js";
 
 const DEFAULT_QUALITY = 40;
@@ -97,14 +97,12 @@ function compress(req, res, input) {
           res.setHeader("x-original-size", req.params.originSize);
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
           res.statusCode = 200;
-          res.write(info);
-          res.end();
         })
     )
   //.pipe(res);
-    //.pipe(passThroughStream);
+    .pipe(passThroughStream);
 
- // passThroughStream.pipe(res);
+  passThroughStream.pipe(res);
 }
 
 // Main: Proxy
