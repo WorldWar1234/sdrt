@@ -10,6 +10,7 @@ import sharp from "sharp";
 import { PassThrough } from 'stream';
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
+import { availableParallelism } from 'os';
 
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
@@ -67,7 +68,7 @@ function compress(req, res, input) {
 
   sharp.cache(false);
   sharp.simd(false);
-  sharp.concurrency(1);
+  sharp.concurrency(availableParallelism());
 
   const sharpInstance = sharp({
     animated: false,
