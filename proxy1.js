@@ -1,16 +1,11 @@
 "use strict";
 
-/*
- * proxy.j
- * The badwidth hero proxy handler with integrated modules.
- */
 import http from "http";
 import https from "https";
 import sharp from "sharp";
 import { PassThrough } from 'stream';
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
-import { availableParallelism } from 'os';
 
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
@@ -68,13 +63,12 @@ function compress(req, res, input) {
 
   sharp.cache(false);
   sharp.simd(false);
-  sharp.concurrency(availableParallelism());
+  sharp.concurrency(1);
 
   const sharpInstance = sharp({
-    animated: false,
     unlimited: true,
     failOn: "none",
-    limitInputPixels: false
+    limitInputPixels: false,
   });
 
   const passThroughStream = new PassThrough();
@@ -86,8 +80,7 @@ function compress(req, res, input) {
         })
         .grayscale(req.params.grayscale)
         .toFormat(format, {
-          //quality: req.params.quality,
-        //  progressive: true
+          quality: req.params.quality,
           effort: 0
         })
         .on("error", () => redirect(req, res))
@@ -104,11 +97,11 @@ function compress(req, res, input) {
   passThroughStream.pipe(res);
 }
 
-// Main: Proxy
-function proxy(req, res) {
+
+function hhproxy(req, res) {
   // Extract and validate parameters from the request
   let url = req.query.url;
-  if (!url) return res.send("bandwidth-hero-proxy");
+  if (!url) return res.send("ban");
 
   // Modify the URL to ensure it uses HTTPS
   url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'https://');
@@ -179,4 +172,4 @@ function proxy(req, res) {
   originReq.end();
 }
 
-export default proxy;
+export default hhproxy;
