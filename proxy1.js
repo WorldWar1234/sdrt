@@ -182,10 +182,17 @@ const requestModule = parsedUrl.protocol === 'https:' ? https : http;
             res.setHeader(header, originRes.headers[header]);
           }
         });
-        return originRes.pipe(res);
+
+        // Use res.write for bypass
+        originRes.on('data', (chunk) => {
+          res.write(chunk);
+        });
+
+        originRes.on('end', () => {
+          res.end();
+        });
       }
     });
-
     originReq.end();
   } catch (err) {
     if (err.code === 'ERR_INVALID_URL') {
