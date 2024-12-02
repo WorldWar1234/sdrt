@@ -115,7 +115,7 @@ function proxy(req, res) {
 
   // Set request parameters
   req.params = {};
-  req.params.url = decodeURIComponent(url);
+  req.params.url = url;
   req.params.webp = !req.query.jpeg;
   req.params.grayscale = req.query.bw != 0;
   req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
