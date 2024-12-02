@@ -81,20 +81,23 @@ function compress(req, res, input) {
       effort: 0
     });
 
-  let headersSet = false;
+  let infoReceived = false;
 
   input
     .pipe(transform)
-    .on('info', (info) => {
-      if (!headersSet) {
-        res.setHeader("content-type", "image/" + format);
-        res.setHeader("content-length", info.size);
-        res.setHeader("x-original-size", req.params.originSize);
-        res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-        res.statusCode = 200;
-        headersSet = true;
-      }
-    })
+    .on("error", () => {
+          if (!res.headersSent && !infoReceived) {
+            redirect(req, res);
+          }
+        })
+    .on("info", (info) => {
+          infoReceived = true;
+          res.setHeader("content-type", "image/" + format);
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+          res.statusCode = 200;
+        })
     .on('data', (chunk) => {
       if (!res.write(chunk)) {
         input.pause();
@@ -106,12 +109,7 @@ function compress(req, res, input) {
     .on('end', () => {
       res.end();
     })
-    .on('error', (err) => {
-      console.error("Error:", err);
-      if (!headersSet) {
-        res.status(500).send("Internal Server Error");
-      }
-    });
+    
 }
 
 
