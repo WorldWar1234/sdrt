@@ -141,9 +141,9 @@ function proxy(req, res) {
   };
 
   // Always use http module
-  const requestModule = http;
+  const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
-  const originReq = requestModule.request(parsedUrl, options, (originRes) => {
+  let originReq = requestModule.request(parsedUrl, options, (originRes) => {
     // Handle non-2xx or redirect responses.
     if (
       originRes.statusCode >= 400 ||
