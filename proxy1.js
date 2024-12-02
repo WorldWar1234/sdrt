@@ -72,29 +72,11 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  let buffer = [];
-  let writing = true;
-
-  function writeData() {
-    while (writing && buffer.length) {
-      const chunk = buffer.shift();
-      if (!res.write(chunk)) {
-        writing = false;
-        res.once('drain', () => {
-          writing = true;
-          writeData();
-        });
-      }
-    }
-    if (buffer.length === 0) {
-      res.end();
-    }
-  }
-
   input
     .pipe(
       sharpInstance
         .resize(null, 16383, {
+          fit: 'inside',
           withoutEnlargement: true
         })
         .grayscale(req.params.grayscale)
@@ -112,13 +94,13 @@ function compress(req, res, input) {
         })
     )
     .on('data', (chunk) => {
-      buffer.push(chunk);
-      writeData();
+      res.write(chunk);
     })
     .on('end', () => {
-      writeData();
+      res.end();
     });
 }
+
 
 
 
