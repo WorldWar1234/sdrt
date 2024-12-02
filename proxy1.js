@@ -140,49 +140,49 @@ function proxy(req, res) {
     rejectUnauthorized: false // Disable SSL verification
   };
 
-  // Always use http module
-  const requestModule = parsedUrl.protocol === 'https:' ? https : http;
+const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
-  let originReq = requestModule.request(parsedUrl, options, (originRes) => {
-    // Handle non-2xx or redirect responses.
-    if (
-      originRes.statusCode >= 400 ||
-      (originRes.statusCode >= 300 && originRes.headers.location)
-    ) {
-      return redirect(req, res);
-    }
+  try {
+    let originReq = requestModule.request(parsedUrl, options, (originRes) => {
+      // Handle non-2xx or redirect responses.
+      if (
+        originRes.statusCode >= 400 ||
+        (originRes.statusCode >= 300 && originRes.headers.location)
+      ) {
+        return redirect(req, res);
+      }
 
-    // Set headers and stream response.
-    copyHeaders(originRes, res);
-    res.setHeader("content-encoding", "identity");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
-    req.params.originType = originRes.headers["content-type"] || "";
-    req.params.originSize = originRes.headers["content-length"] || "0";
+      // Set headers and stream response.
+      copyHeaders(originRes, res);
+      res.setHeader("content-encoding", "identity");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+      req.params.originType = originRes.headers["content-type"] || "";
+      req.params.originSize = originRes.headers["content-length"] || "0";
 
-    if (shouldCompress(req)) {
-      return compress(req, res, originRes);
-    } else {
-      res.setHeader("x-proxy-bypass", 1);
-      ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
-        if (originRes.headers[header]) {
-          res.setHeader(header, originRes.headers[header]);
-        }
-      });
-      return originRes.pipe(res);
-    }
-  });
+      if (shouldCompress(req)) {
+        return compress(req, res, originRes);
+      } else {
+        res.setHeader("x-proxy-bypass", 1);
+        ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
+          if (originRes.headers[header]) {
+            res.setHeader(header, originRes.headers[header]);
+          }
+        });
+        return originRes.pipe(res);
+      }
+    });
 
-  originReq.on('error', (err) => {
+    originReq.end();
+  } catch (err) {
     if (err.code === 'ERR_INVALID_URL') {
       return res.statusCode = 400, res.end("Invalid URL");
     }
-    redirect(req, res);
     console.error(err);
-  });
-
-  originReq.end();
+    redirect(req, res);
+    
+  }
 }
 
 export default proxy;
