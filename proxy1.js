@@ -59,7 +59,6 @@ function redirect(req, res) {
   res.end();
 }
 
-// Helper: Compress
 function compress(req, res, input) {
   const format = "jpeg";
 
@@ -73,6 +72,25 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
+  let buffer = [];
+  let writing = true;
+
+  function writeData() {
+    while (writing && buffer.length) {
+      const chunk = buffer.shift();
+      if (!res.write(chunk)) {
+        writing = false;
+        res.once('drain', () => {
+          writing = true;
+          writeData();
+        });
+      }
+    }
+    if (buffer.length === 0) {
+      res.end();
+    }
+  }
+
   input
     .pipe(
       sharpInstance
@@ -83,9 +101,6 @@ function compress(req, res, input) {
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
-          // progressive: true,
-          // optimizeScans: true,
-          // chromaSubsampling: '4:2:0',
           effort: 0
         })
         .on("error", () => redirect(req, res))
@@ -98,12 +113,14 @@ function compress(req, res, input) {
         })
     )
     .on('data', (chunk) => {
-      res.write(chunk);
+      buffer.push(chunk);
+      writeData();
     })
     .on('end', () => {
-      res.end();
+      writeData();
     });
 }
+
 
 
 // Main: Proxy
