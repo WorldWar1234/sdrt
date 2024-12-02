@@ -61,7 +61,7 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
-  const format = "jpeg";
+  const format = "webp";
 
   sharp.cache(false);
   sharp.simd(true);
@@ -105,7 +105,7 @@ function compress(req, res, input) {
 }
 
 // Main: Proxy
-function proxy(req, res) {
+function hhproxy(req, res) {
   // Extract and validate parameters from the request
   let url = req.query.url;
   if (!url) return res.end("bandwidth-hero-proxy");
@@ -185,4 +185,4 @@ const requestModule = parsedUrl.protocol === 'https:' ? https : http;
   }
 }
 
-export default proxy;
+export default hhproxy;
