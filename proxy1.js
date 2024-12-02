@@ -64,8 +64,8 @@ function compress(req, res, input) {
   const format = "jpeg";
 
   sharp.cache(false);
-  sharp.simd(true);
-  sharp.concurrency(availableParallelism());
+  sharp.simd(false);
+  sharp.concurrency(1);
 
   const sharpInstance = sharp({
     unlimited: true,
