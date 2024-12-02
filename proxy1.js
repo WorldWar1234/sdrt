@@ -57,9 +57,6 @@ function redirect(req, res) {
   res.end();
 }
 
-const sharp = require('sharp');
-const { availableParallelism } = require('os');
-
 function compress(req, res, input) {
   const format = "jpeg";
 
@@ -116,8 +113,6 @@ function compress(req, res, input) {
       }
     });
 }
-
-
 
 
 
