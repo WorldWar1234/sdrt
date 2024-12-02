@@ -8,7 +8,7 @@ import http from "http";
 import https from "https";
 import sharp from "sharp";
 import { availableParallelism } from 'os';
-import { PassThrough } from 'stream';
+//import { PassThrough } from 'stream';
 import pick from "./pick.js";
 
 const DEFAULT_QUALITY = 40;
@@ -73,7 +73,7 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  const passThroughStream = new PassThrough();
+  //const passThroughStream = new PassThrough();
 
   input
     .pipe(
@@ -99,9 +99,10 @@ function compress(req, res, input) {
           res.statusCode = 200;
         })
     )
-    .pipe(passThroughStream);
+  .pipe(res);
+    //.pipe(passThroughStream);
 
-  passThroughStream.pipe(res);
+ // passThroughStream.pipe(res);
 }
 
 // Main: Proxy
