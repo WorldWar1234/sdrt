@@ -57,12 +57,15 @@ function redirect(req, res) {
   res.end();
 }
 
+const sharp = require('sharp');
+const { availableParallelism } = require('os');
+
 function compress(req, res, input) {
-  const format = "webp";
+  const format = "jpeg";
 
   sharp.cache(false);
-  sharp.simd(false);
-  sharp.concurrency(1);
+  sharp.simd(true);
+  sharp.concurrency(availableParallelism());
 
   const sharpInstance = sharp({
     unlimited: true,
@@ -70,33 +73,50 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
+  const transform = sharpInstance
+    .resize(null, 16383, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+    .grayscale(req.params.grayscale)
+    .toFormat(format, {
+      quality: req.params.quality,
+      effort: 0
+    });
+
+  let headersSet = false;
+
   input
-    .pipe(
-      sharpInstance
-        .resize(null, 16383, {
-          withoutEnlargement: true
-        })
-        .grayscale(req.params.grayscale)
-        .toFormat(format, {
-          quality: req.params.quality,
-          effort: 0
-        })
-        .on("error", () => redirect(req, res))
-        .on("info", (info) => {
-          res.setHeader("content-type", "image/" + format);
-          res.setHeader("content-length", info.size);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-          res.statusCode = 200;
-        })
-    )
+    .pipe(transform)
+    .on('info', (info) => {
+      if (!headersSet) {
+        res.setHeader("content-type", "image/" + format);
+        res.setHeader("content-length", info.size);
+        res.setHeader("x-original-size", req.params.originSize);
+        res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+        res.statusCode = 200;
+        headersSet = true;
+      }
+    })
     .on('data', (chunk) => {
-      res.write(chunk);
+      if (!res.write(chunk)) {
+        input.pause();
+        res.once('drain', () => {
+          input.resume();
+        });
+      }
     })
     .on('end', () => {
       res.end();
+    })
+    .on('error', (err) => {
+      console.error("Error:", err);
+      if (!headersSet) {
+        res.status(500).send("Internal Server Error");
+      }
     });
 }
+
 
 
 
