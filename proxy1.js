@@ -73,7 +73,7 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  //const passThroughStream = new PassThrough();
+  const passThroughStream = new PassThrough();
 
   input
     .pipe(
