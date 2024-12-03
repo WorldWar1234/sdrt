@@ -121,7 +121,7 @@ function hhproxy(req, res) {
   if (!url) return res.end("bandwidth-hero-proxy");
 
   // Replace the URL pattern
-  url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
+//  url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
 
   // Set request parameters
   req.params = {};
@@ -138,7 +138,7 @@ function hhproxy(req, res) {
     return redirect(req, res);
   }
 
-  const parsedUrl = new URL(req.params.url);
+ // const parsedUrl = new URL(req.params.url);
   const options = {
     headers: {
       ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
@@ -150,10 +150,10 @@ function hhproxy(req, res) {
     rejectUnauthorized: false // Disable SSL verification
   };
 
-const requestModule = parsedUrl.protocol === 'https:' ? https : http;
+const requestModule = req.params.url.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = requestModule.request(parsedUrl, options, (originRes) => {
+    let originReq = requestModule.request(req.params.url, options, (originRes) => {
       // Handle non-2xx or redirect responses.
       if (
         originRes.statusCode >= 400 ||
