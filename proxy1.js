@@ -81,17 +81,14 @@ function compress(req, res, input) {
       effort: 0
     });
 
-  let infoReceived = false;
-
   input
     .pipe(transform)
     .on("error", () => {
-          if (!res.headersSent && !infoReceived) {
+          if (!res.headersSent || !info) {
             redirect(req, res);
           }
         })
     .on("info", (info) => {
-          infoReceived = true;
           res.setHeader("content-type", "image/" + format);
           res.setHeader("content-length", info.size);
           res.setHeader("x-original-size", req.params.originSize);
@@ -121,11 +118,11 @@ function hhproxy(req, res) {
   if (!url) return res.end("bandwidth-hero-proxy");
 
   // Replace the URL pattern
-  url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
+ // url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
 
   // Set request parameters
   req.params = {};
-  req.params.url = url;
+  req.params.url = decodeURIComponent(url);
   req.params.webp = !req.query.jpeg;
   req.params.grayscale = req.query.bw != 0;
   req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
