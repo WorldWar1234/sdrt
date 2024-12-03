@@ -81,14 +81,17 @@ function compress(req, res, input) {
       effort: 0
     });
 
+  let infoReceived = false;
+
   input
     .pipe(transform)
     .on("error", () => {
-          if (!res.headersSent || !info) {
+          if (!res.headersSent && !infoReceived) {
             redirect(req, res);
           }
         })
     .on("info", (info) => {
+          infoReceived = true;
           res.setHeader("content-type", "image/" + format);
           res.setHeader("content-length", info.size);
           res.setHeader("x-original-size", req.params.originSize);
