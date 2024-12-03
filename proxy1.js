@@ -196,7 +196,7 @@ const requestModule = parsedUrl.protocol === 'https:' ? https : http;
     if (err.code === 'ERR_INVALID_URL') {
       return res.statusCode = 400, res.end("Invalid URL");
     }
-    console.error(err);
+    //console.error(err);
     redirect(req, res);
     
   }
