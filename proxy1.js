@@ -81,16 +81,16 @@ function compress(req, res, input) {
       effort: 0
     });
 
-    let infoReceived = false;
+  let infoReceived = false;
 
   input
     .pipe(transform)
     .on("error", () => {
           if (!res.headersSent && !infoReceived) {
-             redirect(req, res);
+            redirect(req, res);
           }
         })
-  .on("info", (info) => {
+    .on("info", (info) => {
           infoReceived = true;
           res.setHeader("content-type", "image/" + format);
           res.setHeader("content-length", info.size);
@@ -98,7 +98,7 @@ function compress(req, res, input) {
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
           res.statusCode = 200;
         })
-  .on('data', (chunk) => {
+    .on('data', (chunk) => {
       if (!res.write(chunk)) {
         input.pause();
         res.once('drain', () => {
@@ -109,7 +109,7 @@ function compress(req, res, input) {
     .on('end', () => {
       res.end();
     })
-
+    
 }
 
 
