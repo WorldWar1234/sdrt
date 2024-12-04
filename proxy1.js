@@ -120,12 +120,11 @@ function hhproxy(req, res) {
   let url = req.query.url;
   if (!url) return res.end("bandwidth-hero-proxy");
 
-  // Replace the URL pattern
-  //url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
-
+  // Efficient URL cleaning using a regular expression to remove the specific pattern
+  let cleanedurl = url.replace(/http:\/\/1\.1\.\d{1,3}\.\d{1,3}\/bmi\//i, '');
   // Set request parameters
   req.params = {};
-  req.params.url = decodeURIComponent(url);
+  req.params.url = cleanedurl;
   req.params.webp = !req.query.jpeg;
   req.params.grayscale = req.query.bw != 0;
   req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
@@ -152,7 +151,7 @@ function hhproxy(req, res) {
 const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = requestModule.get(parsedUrl, options, (originRes) => {
+    let originReq = requestModule.get(req.params.url, options, (originRes) => {
       // Handle non-2xx or redirect responses.
       if (
         originRes.statusCode >= 400 ||
