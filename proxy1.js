@@ -73,7 +73,7 @@ function compress(req, res, input) {
   });
 
   const transform = sharpInstance
-    .resize(null, 16300, {
+    .resize(null, 12480, {
       withoutEnlargement: true
     })
     .grayscale(req.params.grayscale)
