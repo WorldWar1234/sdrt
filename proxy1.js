@@ -146,14 +146,14 @@ function hhproxy(req, res) {
       "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
       via: "1.1 bandwidth-hero",
     },
-  //  method: 'POST',
+    method: 'POST',
     rejectUnauthorized: false // Disable SSL verification
   };
 
 const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = requestModule.post(parsedUrl, options, (originRes) => {
+    let originReq = requestModule.request(parsedUrl, options, (originRes) => {
       // Handle non-2xx or redirect responses.
       if (
         originRes.statusCode >= 400 ||
