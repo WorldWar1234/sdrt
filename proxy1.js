@@ -83,7 +83,7 @@ function compress(req, res, input) {
 
   let infoReceived = false;
 
-  input.body
+  input
     .pipe(transform)
     .on("error", () => {
           if (!res.headersSent && !infoReceived) {
