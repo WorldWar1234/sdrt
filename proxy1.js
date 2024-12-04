@@ -58,7 +58,7 @@ function redirect(req, res) {
 }
 
 // Helper: Compress
-function compress(req, res, input) {
+async function compress(req, res, input) {
   const format = "jpeg";
 
   sharp.cache(false);
@@ -71,47 +71,61 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  const transform = sharpInstance
-    .resize(null, 16383, {
-      withoutEnlargement: true
-    })
-    .grayscale(req.params.grayscale)
-    .toFormat(format, {
-      quality: req.params.quality,
-      effort: 0
-    });
+  try {
+    // Get the metadata of the input image to determine its dimensions
+    const metadata = await sharp(input).metadata();
 
-  let infoReceived = false;
+    // Create a sharp instance for transformation
+    let transform = sharpInstance;
 
-  input
-    .pipe(transform)
-    .on("error", () => {
-          if (!res.headersSent && !infoReceived) {
-            redirect(req, res);
-          }
-        })
-    .on("info", (info) => {
-          infoReceived = true;
-          res.setHeader("content-type", "image/" + format);
-          res.setHeader("content-length", info.size);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-          res.statusCode = 200;
-        })
-    .on('data', (chunk) => {
-      if (!res.write(chunk)) {
-        input.pause();
-        res.once('drain', () => {
-          input.resume();
-        });
-      }
-    })
-    .on('end', () => {
-      res.end();
-    })
-    
+    // Only resize if the height is greater than 16383
+    if (metadata.height > 16383) {
+      transform = transform.resize(null, 16383, {
+        withoutEnlargement: true
+      });
+    }
+
+    transform = transform
+      .grayscale(req.params.grayscale)
+      .toFormat(format, {
+        quality: req.params.quality,
+        effort: 0
+      });
+
+    let infoReceived = false;
+
+    input
+      .pipe(transform)
+      .on("error", () => {
+        if (!res.headersSent && !infoReceived) {
+          redirect(req, res);
+        }
+      })
+      .on("info", (info) => {
+        infoReceived = true;
+        res.setHeader("content-type", "image/" + format);
+        res.setHeader("content-length", info.size);
+        res.setHeader("x-original-size", req.params.originSize);
+        res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+        res.statusCode = 200;
+      })
+      .on('data', (chunk) => {
+        if (!res.write(chunk)) {
+          input.pause();
+          res.once('drain', () => {
+            input.resume();
+          });
+        }
+      })
+      .on('end', () => {
+        res.end();
+      });
+  } catch (error) {
+    if (!res.headersSent) {
+      redirect(req, res);
+    }
+  }
 }
-
 
 
 
