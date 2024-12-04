@@ -81,7 +81,11 @@ function compress(req, res, input) {
 
       // Resize only if the height exceeds 16,383 pixels
       if (metadata.height > 16383) {
-        transform.resize(null, 16383, { withoutEnlargement: true });
+        transform.resize({
+          height: 16383,
+          withoutEnlargement: true,
+          kernel: sharp.kernel.lanczos3, // Use Lanczos3 for resizing
+        });
       }
 
       // Apply grayscale and output format
