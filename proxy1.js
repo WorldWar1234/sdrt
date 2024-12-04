@@ -59,10 +59,8 @@ function redirect(req, res) {
 }
 
 // Helper: Compress
-
-function compress(req, res, input) {
+async function compress(req, res, input) {
   const format = "jpeg";
-  const passThrough = new PassThrough();
 
   sharp.cache(false);
   sharp.simd(false);
@@ -74,64 +72,68 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  let transform = sharpInstance
-    .metadata()
-    .then(metadata => {
-      if (metadata.height > 16383) {
-        return sharpInstance
-          .resize(null, 16383, {
-            withoutEnlargement: true,
-            kernel: sharp.kernel.lanczos3
-          })
-          .grayscale(req.params.grayscale)
-          .toFormat(format, {
-            quality: req.params.quality,
-            effort: 0
-          });
-      } else {
-        return sharpInstance
-          .grayscale(req.params.grayscale)
-          .toFormat(format, {
-            quality: req.params.quality,
-            effort: 0
-          });
-      }
-    })
-    .catch(err => {
-      console.error('Error processing image metadata:', err);
-      return sharpInstance;
-    });
-
   let infoReceived = false;
+  let metadata;
 
-  input
-    .pipe(passThrough)
-    .pipe(transform)
-    .on("error", () => {
-      if (!res.headersSent && !infoReceived) {
-        redirect(req, res);
-      }
-    })
-    .on("info", (info) => {
-      infoReceived = true;
-      res.setHeader("content-type", "image/" + format);
-      res.setHeader("content-length", info.size);
-      res.setHeader("x-original-size", req.params.originSize);
-      res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-      res.statusCode = 200;
-    })
-    .on('data', (chunk) => {
-      if (!res.write(chunk)) {
-        passThrough.pause();
-        res.once('drain', () => {
-          passThrough.resume();
-        });
-      }
-    })
-    .on('end', () => {
-      res.end();
-    });
+  try {
+    // Create a PassThrough stream to buffer the input
+    const passThrough = new PassThrough();
+    input.pipe(passThrough);
+
+    // Retrieve metadata from the input stream
+    metadata = await sharp(passThrough).metadata();
+
+    // Create a sharp instance for transformation
+    let transform = sharpInstance;
+
+    // Only resize if the height is greater than 16383
+    if (metadata.height > 16383) {
+      transform = transform.resize(null, 16383, {
+        withoutEnlargement: true
+      });
+    }
+
+    transform = transform
+      .grayscale(req.params.grayscale)
+      .toFormat(format, {
+        quality: req.params.quality,
+        effort: 0
+      });
+
+    // Pipe the input stream through the transformation
+    passThrough
+      .pipe(transform)
+      .on("error", () => {
+        if (!res.headersSent && !infoReceived) {
+          redirect(req, res);
+        }
+      })
+      .on("info", (info) => {
+        infoReceived = true;
+        res.setHeader("content-type", "image/" + format);
+        res.setHeader("content-length", info.size);
+        res.setHeader("x-original-size", req.params.originSize);
+        res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+        res.statusCode = 200;
+      })
+      .on('data', (chunk) => {
+        if (!res.write(chunk)) {
+          passThrough.pause();
+          res.once('drain', () => {
+            passThrough.resume();
+          });
+        }
+      })
+      .on('end', () => {
+        res.end();
+      });
+  } catch (error) {
+    if (!res.headersSent) {
+      redirect(req, res);
+    }
+  }
 }
+
 
 
 
