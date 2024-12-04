@@ -59,20 +59,21 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
-  const format = "jpeg";
+  const format = "webp";
 
   sharp.cache(false);
   sharp.simd(false);
   sharp.concurrency(1);
 
   const sharpInstance = sharp({
+    animated: false,
     unlimited: true,
     failOn: "none",
     limitInputPixels: false,
   });
 
   const transform = sharpInstance
-    .resize(null, 16383, {
+    .resize(null, 16300, {
       withoutEnlargement: true
     })
     .grayscale(req.params.grayscale)
