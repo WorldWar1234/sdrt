@@ -107,8 +107,8 @@ function compress(req, res, input) {
       }
     })
     .on('end', () => {
+      originRes.resume();
       res.end();
-      input.destroy();
     })
     
 }
@@ -126,7 +126,7 @@ function hhproxy(req, res) {
 
   // Set request parameters
   req.params = {};
-  req.params.url = url;
+  req.params.url = decodeURIComponent(url);
   req.params.webp = !req.query.jpeg;
   req.params.grayscale = req.query.bw != 0;
   req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
@@ -159,6 +159,7 @@ const requestModule = parsedUrl.protocol === 'https:' ? https : http;
         originRes.statusCode >= 400 ||
         (originRes.statusCode >= 300 && originRes.headers.location)
       ) {
+        originRes.resume(); // Consume response data to free up memory
         return redirect(req, res);
       }
 
@@ -187,17 +188,15 @@ const requestModule = parsedUrl.protocol === 'https:' ? https : http;
         });
 
         originRes.on('end', () => {
+          originRes.resume();
           res.end();
-          originRes.destroy();
         });
       }
     });
-   // originReq.end();
   } catch (err) {
     if (err.code === 'ERR_INVALID_URL') {
       return res.statusCode = 400, res.end("Invalid URL");
     }
-    //console.error(err);
     redirect(req, res);
     
   }
