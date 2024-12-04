@@ -108,6 +108,7 @@ function compress(req, res, input) {
     })
     .on('end', () => {
       res.end();
+      input.destroy();
     })
     
 }
@@ -187,6 +188,7 @@ const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
         originRes.on('end', () => {
           res.end();
+          originRes.destroy();
         });
       }
     });
