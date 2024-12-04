@@ -84,7 +84,7 @@ function compress(req, res, input) {
         transform.resize({
           height: 16383,
           withoutEnlargement: true,
-          kernel: sharp.kernel.lanczos3, // Use Lanczos3 for resizing
+          fastShrinkOnLoad: true
         });
       }
 
