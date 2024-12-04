@@ -6,6 +6,7 @@
  */
 import http from "http";
 import https from "https";
+import { PassThrough } from 'stream';
 import sharp from "sharp";
 import pick from "./pick.js";
 
@@ -58,8 +59,10 @@ function redirect(req, res) {
 }
 
 // Helper: Compress
+
 function compress(req, res, input) {
   const format = "jpeg";
+  const passThrough = new PassThrough();
 
   sharp.cache(false);
   sharp.simd(false);
@@ -71,10 +74,9 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  const transform = sharpInstance
+  let transform = sharpInstance
     .metadata()
     .then(metadata => {
-      // Check if the image height exceeds 16383 pixels
       if (metadata.height > 16383) {
         return sharpInstance
           .resize(null, 16383, {
@@ -103,6 +105,7 @@ function compress(req, res, input) {
   let infoReceived = false;
 
   input
+    .pipe(passThrough)
     .pipe(transform)
     .on("error", () => {
       if (!res.headersSent && !infoReceived) {
@@ -119,9 +122,9 @@ function compress(req, res, input) {
     })
     .on('data', (chunk) => {
       if (!res.write(chunk)) {
-        input.pause();
+        passThrough.pause();
         res.once('drain', () => {
-          input.resume();
+          passThrough.resume();
         });
       }
     })
