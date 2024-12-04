@@ -83,8 +83,7 @@ function compress(req, res, input) {
       if (metadata.height > 16383) {
         transform.resize({
           height: 16383,
-          withoutEnlargement: true,
-          fastShrinkOnLoad: true
+          withoutEnlargement: true
         });
       }
 
