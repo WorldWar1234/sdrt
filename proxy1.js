@@ -146,7 +146,6 @@ function hhproxy(req, res) {
       "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
       via: "1.1 bandwidth-hero",
     },
-    method: 'POST',
     rejectUnauthorized: false // Disable SSL verification
   };
 
