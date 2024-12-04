@@ -106,9 +106,9 @@ function compress(req, res, input) {
         });
       }
     })
-    .on('end', () => {
+   /* .on('end', () => {
       res.end();
-    })
+    })*/
     
 }
 
@@ -185,9 +185,9 @@ const requestModule = parsedUrl.protocol === 'https:' ? https : http;
           res.write(chunk);
         });
 
-        originRes.on('end', () => {
+        /*originRes.on('end', () => {
           res.end();
-        });
+        });*/
       }
     });
    // originReq.end();
