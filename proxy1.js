@@ -58,7 +58,7 @@ function redirect(req, res) {
 }
 
 // Helper: Compress
-async function compress(req, res, input) {
+function compress(req, res, input) {
   const format = "jpeg";
 
   sharp.cache(false);
@@ -71,21 +71,20 @@ async function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  try {
-    // Get the metadata of the input image to determine its dimensions
-    const metadata = await sharp(input).metadata();
-
-    // Create a sharp instance for transformation
-    let transform = sharpInstance;
-
-    // Only resize if the height is greater than 16383
-    if (metadata.height > 16383) {
-      transform = transform.resize(null, 16383, {
-        withoutEnlargement: true
-      });
+  // Capture image metadata before transformation
+  sharpInstance.metadata((err, metadata) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).send('Error processing image metadata');
     }
 
-    transform = transform
+    // Check if the image height exceeds 16383
+    const resizeHeight = metadata.height > 16383 ? 16383 : null;
+
+    const transform = sharpInstance
+      .resize(null, resizeHeight, {
+        withoutEnlargement: true
+      })
       .grayscale(req.params.grayscale)
       .toFormat(format, {
         quality: req.params.quality,
@@ -120,11 +119,7 @@ async function compress(req, res, input) {
       .on('end', () => {
         res.end();
       });
-  } catch (error) {
-    if (!res.headersSent) {
-      redirect(req, res);
-    }
-  }
+  });
 }
 
 
