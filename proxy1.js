@@ -71,55 +71,63 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  // Capture image metadata before transformation
-  sharpInstance.metadata((err, metadata) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).send('Error processing image metadata');
-    }
-
-    // Check if the image height exceeds 16383
-    const resizeHeight = metadata.height > 16383 ? 16383 : null;
-
-    const transform = sharpInstance
-      .resize(null, resizeHeight, {
-        withoutEnlargement: true
-      })
-      .grayscale(req.params.grayscale)
-      .toFormat(format, {
-        quality: req.params.quality,
-        effort: 0
-      });
-
-    let infoReceived = false;
-
-    input
-      .pipe(transform)
-      .on("error", () => {
-        if (!res.headersSent && !infoReceived) {
-          redirect(req, res);
-        }
-      })
-      .on("info", (info) => {
-        infoReceived = true;
-        res.setHeader("content-type", "image/" + format);
-        res.setHeader("content-length", info.size);
-        res.setHeader("x-original-size", req.params.originSize);
-        res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-        res.statusCode = 200;
-      })
-      .on('data', (chunk) => {
-        if (!res.write(chunk)) {
-          input.pause();
-          res.once('drain', () => {
-            input.resume();
+  const transform = sharpInstance
+    .metadata()
+    .then(metadata => {
+      // Check if the image height exceeds 16383 pixels
+      if (metadata.height > 16383) {
+        return sharpInstance
+          .resize(null, 16383, {
+            withoutEnlargement: true,
+            kernel: sharp.kernel.lanczos3
+          })
+          .grayscale(req.params.grayscale)
+          .toFormat(format, {
+            quality: req.params.quality,
+            effort: 0
           });
-        }
-      })
-      .on('end', () => {
-        res.end();
-      });
-  });
+      } else {
+        return sharpInstance
+          .grayscale(req.params.grayscale)
+          .toFormat(format, {
+            quality: req.params.quality,
+            effort: 0
+          });
+      }
+    })
+    .catch(err => {
+      console.error('Error processing image metadata:', err);
+      return sharpInstance;
+    });
+
+  let infoReceived = false;
+
+  input
+    .pipe(transform)
+    .on("error", () => {
+      if (!res.headersSent && !infoReceived) {
+        redirect(req, res);
+      }
+    })
+    .on("info", (info) => {
+      infoReceived = true;
+      res.setHeader("content-type", "image/" + format);
+      res.setHeader("content-length", info.size);
+      res.setHeader("x-original-size", req.params.originSize);
+      res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+      res.statusCode = 200;
+    })
+    .on('data', (chunk) => {
+      if (!res.write(chunk)) {
+        input.pause();
+        res.once('drain', () => {
+          input.resume();
+        });
+      }
+    })
+    .on('end', () => {
+      res.end();
+    });
 }
 
 
