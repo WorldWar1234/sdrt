@@ -71,37 +71,33 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
+  const transform = sharpInstance
+    .resize(null, 16383, {
+      withoutEnlargement: true
+    })
+    .grayscale(req.params.grayscale)
+    .toFormat(format, {
+      quality: req.params.quality,
+      effort: 0
+    });
+
   let infoReceived = false;
 
   input
-    .pipe(sharpInstance)
+    .pipe(transform)
     .on("error", () => {
-      if (!res.headersSent && !infoReceived) {
-        redirect(req, res);
-      }
-    })
+          if (!res.headersSent && !infoReceived) {
+            redirect(req, res);
+          }
+        })
     .on("info", (info) => {
-      infoReceived = true;
-      res.setHeader("content-type", "image/" + format);
-      res.setHeader("content-length", info.size);
-      res.setHeader("x-original-size", req.params.originSize);
-      res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-      res.statusCode = 200;
-
-      // Only resize if the height exceeds 16383 pixels
-      if (info.height > 16383) {
-        sharpInstance.resize(null, 16383, {
-          withoutEnlargement: true
-        });
-      }
-
-      sharpInstance
-        .grayscale(req.params.grayscale)
-        .toFormat(format, {
-          quality: req.params.quality,
-          effort: 0
-        });
-    })
+          infoReceived = true;
+          res.setHeader("content-type", "image/" + format);
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+          res.statusCode = 200;
+        })
     .on('data', (chunk) => {
       if (!res.write(chunk)) {
         input.pause();
@@ -112,7 +108,8 @@ function compress(req, res, input) {
     })
     .on('end', () => {
       res.end();
-    });
+    })
+    
 }
 
 
