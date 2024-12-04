@@ -152,7 +152,7 @@ function hhproxy(req, res) {
 const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = requestModule.request(parsedUrl, options, (originRes) => {
+    let originReq = requestModule.get(parsedUrl, options, (originRes) => {
       // Handle non-2xx or redirect responses.
       if (
         originRes.statusCode >= 400 ||
