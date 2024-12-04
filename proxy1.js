@@ -6,7 +6,6 @@
  */
 import http from "http";
 import https from "https";
-import { PassThrough } from 'stream';
 import sharp from "sharp";
 import pick from "./pick.js";
 
