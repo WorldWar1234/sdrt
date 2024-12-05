@@ -59,10 +59,10 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
-  const format = "webp";
+  const format = req.params.webp ? "webp" : "jpeg";
 
   sharp.cache(false);
-  sharp.simd(false);
+  sharp.simd(true);
   sharp.concurrency(1);
 
   const sharpInstance = sharp({
@@ -73,13 +73,11 @@ function compress(req, res, input) {
 
   let infoReceived = false;
 
-  // Check metadata to decide resizing
   sharpInstance
     .metadata()
     .then((metadata) => {
       const transform = sharpInstance;
 
-      // Resize only if the height exceeds 16,383 pixels
       if (metadata.height > 16383) {
         transform.resize({
           height: 16383,
@@ -87,7 +85,6 @@ function compress(req, res, input) {
         });
       }
 
-      // Apply grayscale and output format
       transform
         .grayscale(req.params.grayscale)
         .toFormat(format, {
@@ -95,39 +92,46 @@ function compress(req, res, input) {
           effort: 0,
         });
 
-      input
-        .pipe(transform)
-        .on("error", () => {
-          if (!res.headersSent && !infoReceived) {
+      const handleStream = (err) => {
+        if (err) {
+          //console.error("Compression error:", err);
+          if (!res.headersSent || !infoReceived) {
             redirect(req, res);
           }
-        })
-        .on("info", (info) => {
-          infoReceived = true;
-          res.setHeader("content-type", "image/" + format);
-          res.setHeader("content-length", info.size);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-          res.statusCode = 200;
-        })
-        .on("data", (chunk) => {
-          if (!res.write(chunk)) {
-            input.pause();
-            res.once("drain", () => {
-              input.resume();
-            });
-          }
-        })
-        .on("end", () => {
-          res.end();
-        });
+          return;
+        }
+
+        // Start the pipe here
+        input.pipe(sharpInstance);
+
+        sharpInstance
+          .on("info", (info) => {
+            infoReceived = true;
+            res.setHeader("content-type", `image/${format}`);
+            res.setHeader("content-length", info.size);
+            res.setHeader("x-original-size", req.params.originSize);
+            res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+            res.statusCode = 200;
+          })
+          .on("data", (chunk) => {
+            if (!res.write(chunk)) {
+              input.pause();
+              res.once("drain", () => {
+                input.resume();
+              });
+            }
+          })
+          .on("end", () => {
+            res.end();
+          });
+      };
+
+      handleStream(null);
     })
     .catch((err) => {
-      console.error(err);
-      redirect(req, res);
+      //console.error("Metadata error:", err);
+      handleStream(err);
     });
-
-  input.pipe(sharpInstance);
 }
 
 
