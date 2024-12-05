@@ -73,13 +73,11 @@ function compress(req, res, input) {
 
   let infoReceived = false;
 
-  // Check metadata to decide resizing
   sharpInstance
     .metadata()
     .then((metadata) => {
       const transform = sharpInstance;
 
-      // Resize only if the height exceeds 16,383 pixels
       if (metadata.height > 16383) {
         transform.resize({
           height: 16383,
@@ -87,7 +85,6 @@ function compress(req, res, input) {
         });
       }
 
-      // Apply grayscale and output format
       transform
         .grayscale(req.params.grayscale)
         .toFormat(format, {
@@ -97,14 +94,9 @@ function compress(req, res, input) {
 
       input
         .pipe(transform)
-        .on("error", () => {
-          if (!res.headersSent && !infoReceived) {
-            redirect(req, res);
-          }
-        })
         .on("info", (info) => {
           infoReceived = true;
-          res.setHeader("content-type", "image/" + format);
+          res.setHeader("content-type", `image/${format}`);
           res.setHeader("content-length", info.size);
           res.setHeader("x-original-size", req.params.originSize);
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
@@ -113,18 +105,16 @@ function compress(req, res, input) {
         .on("data", (chunk) => {
           if (!res.write(chunk)) {
             input.pause();
-            res.once("drain", () => {
-              input.resume();
-            });
+            res.once("drain", () => input.resume());
           }
         })
-        .on("end", () => {
-          res.end();
-        });
+        .on("end", () => res.end());
     })
     .catch((err) => {
-      console.error(err);
-      redirect(req, res);
+      //console.error(err);
+      if (!res.headersSent && !infoReceived) {
+        redirect(req, res);
+      }
     });
 
   input.pipe(sharpInstance);
