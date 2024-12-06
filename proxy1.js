@@ -132,12 +132,7 @@ function compress(req, res, input) {
           }
         });
     })
-    .catch((err) => {
-      console.error("Error retrieving metadata:", err);
-      if (!res.headersSent && !infoReceived) {
-        redirect(req, res);
-      }
-    });
+    
 }
 
 
