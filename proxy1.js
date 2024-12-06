@@ -118,10 +118,7 @@ function compress(req, res, input) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          if (!res.write(chunk)) {
-            input.pause();
-            res.once("drain", () => input.resume());
-          }
+          res.write(chunk);
         })
         .on("end", () => {
           res.end();
@@ -133,12 +130,7 @@ function compress(req, res, input) {
           }
         });
     })
-    .catch((err) => {
-      console.error("Error retrieving metadata:", err);
-      if (!res.headersSent && !infoReceived) {
-        redirect(req, res);
-      }
-    });
+
 }
 
   // Start the compression process
