@@ -161,16 +161,25 @@ function hhproxy(req, res) {
 
       if (shouldCompress(req)) {
         compress(req, res, originRes);
-      } else {
-        res.setHeader("X-Proxy-Bypass", 1);
-        ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
-          if (originRes.headers[header]) {
-            res.setHeader(header, originRes.headers[header]);
-          }
-        });
-        originRes.pipe(res);
-      }
-    });
+      } else if (shouldCompress(req)) {
+  compress(req, res, originRes);
+} else {
+  res.setHeader("X-Proxy-Bypass", 1);
+  ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
+    if (originRes.headers[header]) {
+      res.setHeader(header, originRes.headers[header]);
+    }
+  });
+
+  // Use res.write for streaming data
+  originRes.on('data', (chunk) => {
+    res.write(chunk);
+  });
+
+  originRes.on('end', () => {
+    res.end();
+  });
+}
 
     originReq.on('error', _ => req.socket.destroy());
 
