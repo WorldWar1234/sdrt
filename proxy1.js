@@ -71,7 +71,6 @@ function redirect(req, res) {
  * @param {http.IncomingMessage} input - The input stream for image data.
  */
 
-const sharp = require('sharp');
 
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg";
@@ -118,7 +117,10 @@ function compress(req, res, input) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          res.write(chunk);
+          if (!res.write(chunk)) {
+            input.pause();
+            res.once("drain", () => input.resume());
+          }
         })
         .on("end", () => {
           res.end();
@@ -130,11 +132,12 @@ function compress(req, res, input) {
           }
         });
     })
-
-}
-
-  // Start the compression process
-  input.pipe(sharpInstance);
+    .catch((err) => {
+      console.error("Error retrieving metadata:", err);
+      if (!res.headersSent && !infoReceived) {
+        redirect(req, res);
+      }
+    });
 }
 
 
