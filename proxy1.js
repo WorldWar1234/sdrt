@@ -136,7 +136,7 @@ function compress(req, res, input) {
     })
 
   // Start the compression process
-  //input.pipe(sharpInstance);
+  input.pipe(sharpInstance);
 }
 
 
