@@ -161,38 +161,33 @@ function hhproxy(req, res) {
 
       if (shouldCompress(req)) {
         compress(req, res, originRes);
-      } else if (shouldCompress(req)) {
-  compress(req, res, originRes);
-} else {
-  res.setHeader("X-Proxy-Bypass", 1);
-  ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
-    if (originRes.headers[header]) {
-      res.setHeader(header, originRes.headers[header]);
-    }
-  });
+      } else {
+        res.setHeader("X-Proxy-Bypass", 1);
+        ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
+          if (originRes.headers[header]) {
+            res.setHeader(header, originRes.headers[header]);
+          }
+        });
 
-  // Use res.write for streaming data
-  originRes.on('data', (chunk) => {
-    res.write(chunk);
-  });
+        originRes.on('data', (chunk) => {
+          res.write(chunk);
+        });
 
-  originRes.on('end', () => {
-    res.end();
-  });
-}
+        originRes.on('end', () => {
+          res.end();
+        });
+      }
+    });
 
     originReq.on('error', _ => req.socket.destroy());
 
     originReq.end();
   } catch (err) {
-    if (err.code === "ERR_INVALID_URL") return res.status(400).send("Invalid URL");
-
-  /*
-   * When there's a real error, Redirect then destroy the stream immediately.
-   */
-  redirect(req, res);
-  console.error(err);
-
+    if (err.code === "ERR_INVALID_URL") {
+      return res.status(400).send("Invalid URL");
+    }
+    redirect(req, res);
+    console.error(err);
   }
 }
 
