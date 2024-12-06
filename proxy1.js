@@ -41,17 +41,26 @@ function copyHeaders(source, target) {
 }
 
 /**
- * Redirects the request to the original URL.
+ * Redirects the request to the original URL with proper headers.
  * @param {http.IncomingMessage} req - The incoming HTTP request.
  * @param {http.ServerResponse} res - The HTTP response.
  */
 function redirect(req, res) {
-  if (res.headersSent) return;
+  if (res.headersSent) return; // If headers are already sent, we can't modify them
 
+  // Set the status code and necessary headers for redirection
   res.writeHead(302, {
     Location: encodeURI(req.params.url),
-    'Content-Length': 0
+    'Content-Length': '0' // No body in a redirect response
   });
+
+  // Remove headers that might interfere with caching or freshness
+  res.removeHeader("cache-control");
+  res.removeHeader("expires");
+  res.removeHeader("date");
+  res.removeHeader("etag");
+
+  // End the response, sending the headers
   res.end();
 }
 
