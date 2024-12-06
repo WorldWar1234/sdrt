@@ -76,6 +76,12 @@ function redirect(req, res) {
  * @param {http.ServerResponse} res - The HTTP response.
  * @param {http.IncomingMessage} input - The input stream for image data.
  */
+/**
+ * Compresses and transforms the image according to request parameters.
+ * @param {http.IncomingMessage} req - The incoming HTTP request.
+ * @param {http.ServerResponse} res - The HTTP response.
+ * @param {http.IncomingMessage} input - The input stream for image data.
+ */
 function compress(req, res, input) {
   // Disable caching, SIMD, and set concurrency to 1
   sharp.cache(false);
@@ -87,44 +93,51 @@ function compress(req, res, input) {
     unlimited: true, // Allow unlimited compression
     failOn: "none",  // Don't fail on warnings
     limitInputPixels: false // Disable pixel limit
-  })
-    .resize({ height: 16383, withoutEnlargement: true })
-    .grayscale(req.params.grayscale)
-    .toFormat(format, {
-      quality: req.params.quality,
-      effort: 0
-    });
+  });
 
+  // First, get the metadata
   sharpInstance.metadata().then((metadata) => {
+    // Apply resizing based on metadata
     if (metadata.height > 16383) {
       sharpInstance.resize({ height: 16383, withoutEnlargement: true });
     }
-  });
 
-  let infoReceived = false;
-
-  input.pipe(sharpInstance)
-    .on("info", (info) => {
-      infoReceived = true;
-      res.writeHead(200, {
-        'Content-Type': `image/${format}`,
-        'Content-Length': info.size,
-        'X-Original-Size': req.params.originSize,
-        'X-Bytes-Saved': req.params.originSize - info.size
+    // Then, apply transformations
+    sharpInstance
+      .grayscale(req.params.grayscale)
+      .toFormat(format, {
+        quality: req.params.quality,
+        effort: 0
       });
-    })
-    .on("data", (chunk) => {
-      if (!res.write(chunk)) {
-        sharpInstance.pause();
-        res.once("drain", () => sharpInstance.resume());
-      }
-    })
-    .on("end", () => res.end())
-    .on("error", (err) => {
-      if (!res.headersSent && !infoReceived) {
-        redirect(req, res);
-      }
-    });
+
+    let infoReceived = false;
+
+    input.pipe(sharpInstance)
+      .on("info", (info) => {
+        infoReceived = true;
+        res.writeHead(200, {
+          'Content-Type': `image/${format}`,
+          'Content-Length': info.size,
+          'X-Original-Size': req.params.originSize,
+          'X-Bytes-Saved': req.params.originSize - info.size
+        });
+      })
+      .on("data", (chunk) => {
+        if (!res.write(chunk)) {
+          sharpInstance.pause();
+          res.once("drain", () => sharpInstance.resume());
+        }
+      })
+      .on("end", () => res.end())
+      .on("error", (err) => {
+        if (!res.headersSent && !infoReceived) {
+          redirect(req, res);
+        }
+      });
+  }).catch((err) => {
+    console.error("Error processing image metadata:", err);
+    redirect(req, res);
+  });
 }
 
 /**
