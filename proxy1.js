@@ -117,9 +117,9 @@ function hhproxy(req, res) {
   let url = req.query.url;
   if (!url) return res.end("bandwidth-hero-proxy");
 
- // const cleanedUrl = url.replace(/http:\/\/1\.1\.\d{1,3}\.\d{1,3}\/bmi\//i, '');
+  const cleanedUrl = url.replace(/http:\/\/1\.1\.\d{1,3}\.\d{1,3}\/bmi\//i, '');
   req.params = {
-    url: url,
+    url: cleanedUrl,
     webp: !req.query.jpeg,
     grayscale: req.query.bw != 0,
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
