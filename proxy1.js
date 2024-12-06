@@ -70,55 +70,80 @@ function redirect(req, res) {
  * @param {http.ServerResponse} res - The HTTP response.
  * @param {http.IncomingMessage} input - The input stream for image data.
  */
+
 function compress(req, res, input) {
-  // Disable caching, SIMD, and set concurrency to 1
-  sharp.cache(false);
-  sharp.simd(false);
-  sharp.concurrency(1);
-
   const format = req.params.webp ? "webp" : "jpeg";
-  const sharpInstance = sharp({
-    unlimited: true, // Allow unlimited compression
-    failOn: "none",  // Don't fail on warnings
-    limitInputPixels: false // Disable pixel limit
-  })
-    .grayscale(req.params.grayscale)
-    .toFormat(format, {
-      quality: req.params.quality,
-      effort: 0
-    });
 
-  sharpInstance.metadata().then((metadata) => {
-    if (metadata.height > 16383) {
-      sharpInstance.resize({ height: 16383, withoutEnlargement: true });
-    }
+  // Setting up sharp like a digital artist's toolkit
+  sharp.cache(false); // No caching, we're living in the moment
+  sharp.simd(false); // SIMD? More like SIM-Don't
+  sharp.concurrency(1); // One at a time, please. This isn't a race.
+
+  const sharpInstance = sharp({
+    unlimited: true, // Go wild, but not too wild
+    failOn: "none", // If it fails, just keep going. Life's too short for errors
+    limitInputPixels: false, // No pixel limits here, let's live on the edge
   });
 
   let infoReceived = false;
 
-  input.pipe(sharpInstance)
-    .on("info", (info) => {
-      infoReceived = true;
-      res.writeHead(200, {
-        'Content-Type': `image/${format}`,
-        'Content-Length': info.size,
-        'X-Original-Size': req.params.originSize,
-        'X-Bytes-Saved': req.params.originSize - info.size
-      });
-    })
-    .on("data", (chunk) => {
-      if (!res.write(chunk)) {
-        sharpInstance.pause();
-        res.once("drain", () => sharpInstance.resume());
+  sharpInstance
+    .metadata()
+    .then((metadata) => {
+      // If the image is too tall, let's shrink it. No skyscraper images here
+      if (metadata.height > 16383) {
+        sharpInstance.resize({
+          height: 16383,
+          withoutEnlargement: true // No stretching, just shrinking
+        });
       }
+
+      // Here's where the magic happens
+      sharpInstance
+        .grayscale(req.params.grayscale) // Black and white? Sure, why not?
+        .toFormat(format, {
+          quality: req.params.quality, // Quality is key, but we're on a budget
+          effort: 0, // Minimal effort, maximum results. The dream, right?
+        });
+
+      // Pipe the input through our sharp instance
+      input
+        .pipe(sharpInstance)
+        .on("info", (info) => {
+          infoReceived = true;
+          // Set headers for the response
+          res.setHeader("content-type", `image/${format}`);
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+          res.statusCode = 200;
+        })
+        .on("data", (chunk) => {
+          // If the response can't keep up, pause the input
+          if (!res.write(chunk)) {
+            input.pause();
+            res.once("drain", () => input.resume());
+          }
+        })
+        .on("end", () => res.end()) // When we're done, we're done
+        .on("error", (err) => {
+          console.error("Error processing image:", err);
+          if (!res.headersSent && !infoReceived) {
+            redirect(req, res);
+          }
+        });
     })
-    .on("end", () => res.end())
-    .on("error", (err) => {
+    .catch((err) => {
+      console.error("Error retrieving metadata:", err);
       if (!res.headersSent && !infoReceived) {
         redirect(req, res);
       }
     });
+
+  // Start the compression process
+  input.pipe(sharpInstance);
 }
+
 
 /**
  * Main proxy handler for bandwidth optimization.
