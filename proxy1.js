@@ -118,6 +118,7 @@ function compress(req, res, input) {
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
           res.statusCode = 200;
         })
+        .pipe(res)
        /* .on("data", (chunk) => {
           // If the response can't keep up, pause the input
           if (!res.write(chunk)) {
@@ -133,15 +134,9 @@ function compress(req, res, input) {
           }
         });
     })
-    .catch((err) => {
-      console.error("Error retrieving metadata:", err);
-      if (!res.headersSent && !infoReceived) {
-        redirect(req, res);
-      }
-    });
 
   // Start the compression process
-  input.pipe(sharpInstance);
+  //input.pipe(sharpInstance);
 }
 
 
