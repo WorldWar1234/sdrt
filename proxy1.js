@@ -70,25 +70,6 @@ function redirect(req, res) {
  * @param {http.ServerResponse} res - The HTTP response.
  * @param {http.IncomingMessage} input - The input stream for image data.
  */
-/**
- * Compresses and transforms the image according to request parameters.
- * @param {http.IncomingMessage} req - The incoming HTTP request.
- * @param {http.ServerResponse} res - The HTTP response.
- * @param {http.IncomingMessage} input - The input stream for image data.
- */
-/**
- * Compresses and transforms the image according to request parameters.
- * @param {http.IncomingMessage} req - The incoming HTTP request.
- * @param {http.ServerResponse} res - The HTTP response.
- * @param {http.IncomingMessage} input - The input stream for image data.
- */
-function compress(req, res, input) {
-/**
- * Compresses and transforms the image according to request parameters.
- * @param {http.IncomingMessage} req - The incoming HTTP request.
- * @param {http.ServerResponse} res - The HTTP response.
- * @param {http.IncomingMessage} input - The input stream for image data.
- */
 function compress(req, res, input) {
   // Disable caching, SIMD, and set concurrency to 1
   sharp.cache(false);
