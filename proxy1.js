@@ -70,11 +70,30 @@ function redirect(req, res) {
  * @param {http.ServerResponse} res - The HTTP response.
  * @param {http.IncomingMessage} input - The input stream for image data.
  */
+/**
+ * Compresses and transforms the image according to request parameters.
+ * @param {http.IncomingMessage} req - The incoming HTTP request.
+ * @param {http.ServerResponse} res - The HTTP response.
+ * @param {http.IncomingMessage} input - The input stream for image data.
+ */
 function compress(req, res, input) {
+  // Disable caching, SIMD, and set concurrency to 1
+  sharp.cache(false);
+  sharp.simd(false);
+  sharp.concurrency(1);
+
   const format = req.params.webp ? "webp" : "jpeg";
-  const sharpInstance = sharp().resize({ height: 16383, withoutEnlargement: true })
+  const sharpInstance = sharp({
+    unlimited: true, // Allow unlimited compression
+    failOn: "none",  // Don't fail on warnings
+    limitInputPixels: false // Disable pixel limit
+  })
+    .resize({ height: 16383, withoutEnlargement: true })
     .grayscale(req.params.grayscale)
-    .toFormat(format, { quality: req.params.quality, effort: 0 });
+    .toFormat(format, {
+      quality: req.params.quality,
+      effort: 0
+    });
 
   sharpInstance.metadata().then((metadata) => {
     if (metadata.height > 16383) {
@@ -96,8 +115,8 @@ function compress(req, res, input) {
     })
     .on("data", (chunk) => {
       if (!res.write(chunk)) {
-        input.pause();
-        res.once("drain", () => input.resume());
+        sharpInstance.pause();
+        res.once("drain", () => sharpInstance.resume());
       }
     })
     .on("end", () => res.end())
