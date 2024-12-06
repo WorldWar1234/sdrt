@@ -118,17 +118,16 @@ function compress(req, res, input) {
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
           res.statusCode = 200;
         })
-        .pipe(res)
-       /* .on("data", (chunk) => {
+        .on("data", (chunk) => {
           // If the response can't keep up, pause the input
           if (!res.write(chunk)) {
             input.pause();
             res.once("drain", () => input.resume());
           }
         })
-        .on("end", () => res.end()) // When we're done, we're done*/
+        .on("end", () => res.end()) // When we're done, we're done
         .on("error", (err) => {
-          console.error("Error processing image:", err);
+          //console.error("Error processing image:", err);
           if (!res.headersSent && !infoReceived) {
             redirect(req, res);
           }
