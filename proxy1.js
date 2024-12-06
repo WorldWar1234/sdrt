@@ -72,7 +72,7 @@ function redirect(req, res) {
  */
 
 function compress(req, res, input) {
-  const format = req.params.webp ? "webp" : "jpeg";
+  const format = "webp";
 
   // Setting up sharp like a digital artist's toolkit
   sharp.cache(false); // No caching, we're living in the moment
@@ -84,9 +84,7 @@ function compress(req, res, input) {
     failOn: "none", // If it fails, just keep going. Life's too short for errors
     limitInputPixels: false, // No pixel limits here, let's live on the edge
   });
-
-  let infoReceived = false;
-
+  
   sharpInstance
     .metadata()
     .then((metadata) => {
@@ -110,7 +108,6 @@ function compress(req, res, input) {
       input
         .pipe(sharpInstance)
         .on("info", (info) => {
-          infoReceived = true;
           // Set headers for the response
           res.setHeader("content-type", `image/${format}`);
           res.setHeader("content-length", info.size);
@@ -119,16 +116,10 @@ function compress(req, res, input) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          // If the response can't keep up, pause the input
-          if (!res.write(chunk)) {
-            input.pause();
-            res.once("drain", () => input.resume());
-          }
+          res.write(chunk);
         })
-        .on("end", () => res.end()) // When we're done, we're done
+        .on("end", () => res.end();) // When we're done, we're done
         .on("error", (err) => {
-          //console.error("Error processing image:", err);
-          if (!res.headersSent && !infoReceived) {
             redirect(req, res);
           }
         });
