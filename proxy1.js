@@ -72,6 +72,8 @@ function redirect(req, res) {
  */
 
 
+const sharp = require('sharp');
+
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg";
 
@@ -105,9 +107,17 @@ function compress(req, res, input) {
           effort: 0,
         });
 
-      // Directly handle the output without using pipe for response
-      input
-        .pipe(sharpInstance)
+      // Manually handle input data
+      input.on('data', (chunk) => {
+        sharpInstance.write(chunk);
+      });
+
+      input.on('end', () => {
+        sharpInstance.end();
+      });
+
+      // Handle output from sharp
+      sharpInstance
         .on("info", (info) => {
           infoReceived = true;
           res.setHeader("content-type", `image/${format}`);
@@ -118,8 +128,8 @@ function compress(req, res, input) {
         })
         .on("data", (chunk) => {
           if (!res.write(chunk)) {
-            input.pause();
-            res.once("drain", () => input.resume());
+            sharpInstance.pause();
+            res.once("drain", () => sharpInstance.resume());
           }
         })
         .on("end", () => {
@@ -132,7 +142,12 @@ function compress(req, res, input) {
           }
         });
     })
-    
+    .catch((err) => {
+      console.error("Error retrieving metadata:", err);
+      if (!res.headersSent && !infoReceived) {
+        redirect(req, res);
+      }
+    });
 }
 
 
