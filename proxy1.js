@@ -82,7 +82,7 @@ function compress(req, res, input) {
     failOn: "none",  // Don't fail on warnings
     limitInputPixels: false // Disable pixel limit
   })
-    sharpInstance.metadata().then((metadata) => {
+    .metadata().then((metadata) => {
     if (metadata.height > 16383) {
       sharpInstance.resize({ height: 16383, withoutEnlargement: true });
     }
