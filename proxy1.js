@@ -120,9 +120,6 @@ function compress(req, res, input) {
         redirect(req, res);
       }
     });
-
-  // Start the compression process
-  input.pipe(sharpInstance);
 }
 
 
