@@ -116,9 +116,9 @@ function compress(req, res, input) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          res.write(chunk);
+          res.write(chunk)
         })
-        .on("end", () => res.end();) // When we're done, we're done
+        .on("end", () => res.end()) // When we're done, we're done
         .on("error", (err) => {
             redirect(req, res);
           }
