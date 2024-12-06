@@ -163,19 +163,18 @@ function hhproxy(req, res) {
       }
     });
 
-    originReq.on('error', (err) => {
-      if (err.code === 'ERR_INVALID_URL') {
-        res.statusCode = 400;
-        res.end("Invalid URL");
-      } else {
-        redirect(req, res);
-      }
-    });
+    originReq.on('error', _ => req.socket.destroy());
 
     originReq.end();
   } catch (err) {
-    res.statusCode = 400;
-    res.end("Invalid URL");
+    if (err.code === "ERR_INVALID_URL") return res.status(400).send("Invalid URL");
+
+  /*
+   * When there's a real error, Redirect then destroy the stream immediately.
+   */
+  redirect(req, res);
+  console.error(err);
+
   }
 }
 
