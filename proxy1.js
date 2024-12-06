@@ -81,43 +81,81 @@ function compress(req, res, input) {
     unlimited: true, // Allow unlimited compression
     failOn: "none",  // Don't fail on warnings
     limitInputPixels: false // Disable pixel limit
-  })
-    .metadata().then((metadata) => {
-    if (metadata.height > 16383) {
-      sharpInstance.resize({ height: 16383, withoutEnlargement: true });
-    }
   });
-    .grayscale(req.params.grayscale)
-    .toFormat(format, {
-      quality: req.params.quality,
-      effort: 0
-    });
-
 
   let infoReceived = false;
 
-  input.pipe(sharpInstance)
-    .on("info", (info) => {
-      infoReceived = true;
-      res.writeHead(200, {
-        'Content-Type': `image/${format}`,
-        'Content-Length': info.size,
-        'X-Original-Size': req.params.originSize,
-        'X-Bytes-Saved': req.params.originSize - info.size
-      });
-    })
-    .on("data", (chunk) => {
-      if (!res.write(chunk)) {
-        sharpInstance.pause();
-        res.once("drain", () => sharpInstance.resume());
-      }
-    })
-    .on("end", () => res.end())
-    .on("error", (err) => {
-      if (!res.headersSent && !infoReceived) {
-        redirect(req, res);
-      }
-    });
+  // First, get metadata to check if resizing is necessary
+  sharpInstance.metadata().then((metadata) => {
+    // If the image height exceeds 16383, resize it
+    if (metadata.height > 16383) {
+      input
+        .pipe(
+          sharpInstance
+            .resize(null, 16383, {
+              withoutEnlargement: true
+            })
+            .grayscale(req.params.grayscale)
+            .toFormat(format, {
+              quality: req.params.quality,
+              effort: 0,
+            })
+        )
+        .on("info", (info) => {
+          infoReceived = true;
+          res.writeHead(200, {
+            'Content-Type': `image/${format}`,
+            'Content-Length': info.size,
+            'X-Original-Size': req.params.originSize,
+            'X-Bytes-Saved': req.params.originSize - info.size
+          });
+        })
+        .on("data", (chunk) => {
+          if (!res.write(chunk)) {
+            sharpInstance.pause();
+            res.once("drain", () => sharpInstance.resume());
+          }
+        })
+        .on("end", () => res.end())
+        .on("error", (err) => {
+          if (!res.headersSent && !infoReceived) {
+            redirect(req, res);
+          }
+        });
+    } else {
+      // If no resizing is needed, just apply grayscale and format transformation
+      input
+        .pipe(
+          sharpInstance
+            .grayscale(req.params.grayscale)
+            .toFormat(format, {
+              quality: req.params.quality,
+              effort: 0,
+            })
+        )
+        .on("info", (info) => {
+          infoReceived = true;
+          res.writeHead(200, {
+            'Content-Type': `image/${format}`,
+            'Content-Length': info.size,
+            'X-Original-Size': req.params.originSize,
+            'X-Bytes-Saved': req.params.originSize - info.size
+          });
+        })
+        .on("data", (chunk) => {
+          if (!res.write(chunk)) {
+            sharpInstance.pause();
+            res.once("drain", () => sharpInstance.resume());
+          }
+        })
+        .on("end", () => res.end())
+        .on("error", (err) => {
+          if (!res.headersSent && !infoReceived) {
+            redirect(req, res);
+          }
+        });
+    }
+  });
 }
 
 /**
