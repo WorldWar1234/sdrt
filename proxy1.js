@@ -85,7 +85,7 @@ function compress(req, res, input) {
     limitInputPixels: false, // No pixel limits here, let's live on the edge
   });
 
-  let infoReceived = false;
+ // let infoReceived = false;
 
   sharpInstance
     .metadata()
@@ -110,7 +110,7 @@ function compress(req, res, input) {
       input
         .pipe(sharpInstance)
         .on("info", (info) => {
-          infoReceived = true;
+          //infoReceived = true;
           // Set headers for the response
           res.setHeader("content-type", `image/${format}`);
           res.setHeader("content-length", info.size);
@@ -123,10 +123,10 @@ function compress(req, res, input) {
         })
         .on("end", () => res.end()) // When we're done, we're done
         .on("error", (err) => {
-          console.error("Error processing image:", err);
-          if (!res.headersSent && !infoReceived) {
+          /*console.error("Error processing image:", err);
+          if (!res.headersSent && !infoReceived) {*/
             redirect(req, res);
-          }
+          
         });
     })
 
