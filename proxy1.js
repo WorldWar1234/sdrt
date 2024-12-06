@@ -119,11 +119,7 @@ function compress(req, res, input) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          // If the response can't keep up, pause the input
-          if (!res.write(chunk)) {
-            input.pause();
-            res.once("drain", () => input.resume());
-          }
+          res.write(chunk)
         })
         .on("end", () => res.end()) // When we're done, we're done
         .on("error", (err) => {
