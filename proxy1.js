@@ -100,14 +100,14 @@ function compress(req, res, input) {
       }
 
       // Apply grayscale and output format
-      sharpInstance
+       sharpInstance
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
           effort: 0,
         });
 
-      sharpInstance
+      input.pipe(sharpInstance)
         .on("info", (info) => {
           infoReceived = true;
           res.setHeader("content-type", "image/" + format);
