@@ -70,7 +70,7 @@ function redirect(req, res) {
  * @param {http.ServerResponse} res - The HTTP response.
  * @param {http.IncomingMessage} input - The input stream for image data.
  */
-function compress(req, res, input) {
+
 async function compress(req, res, input) {
   const format = "jpeg";
 
