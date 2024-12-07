@@ -82,7 +82,7 @@ function redirect(req, res) {
   const sharpInstance = sharp({
     unlimited: true, // Go wild, but not too wild
     failOn: "none", // If it fails, just keep going. Life's too short for errors
-    limitInputPixels: false, // No pixel limits here, let's live on the edge
+    limitInputPixels: false // No pixel limits here, let's live on the edge
   });
 
   sharpInstance
@@ -93,7 +93,7 @@ function redirect(req, res) {
         sharpInstance.resize({
           height: 16383,
           withoutEnlargement: true // No stretching, just shrinking
-        });
+        })
       }
 
       // Here's where the magic happens
@@ -102,7 +102,7 @@ function redirect(req, res) {
         .toFormat(format, {
           quality: req.params.quality, // Quality is key, but we're on a budget
           effort: 0, // Minimal effort, maximum results. The dream, right?
-        });
+        })
 
       // Pipe the input through our sharp instance
         sharpInstance
@@ -115,13 +115,13 @@ function redirect(req, res) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          res.write(chunk);
+          res.write(chunk)
         })
         .on('end', () => {
-          res.end();
+          res.end()
         })
         .on("error", (err) => {
-            redirect(req, res);
+            redirect(req, res)
           
         })
     })
