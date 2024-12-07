@@ -86,19 +86,21 @@ function compress(req, res, input) {
 
   let infoReceived = false;
 
-  // Check metadata to decide resizing
+  // Get image metadata first
   sharpInstance
     .metadata()
     .then((metadata) => {
-      if (metadata.height > 16383) {
+      const shouldResize = metadata.height > 16383;
+
+      // Configure the transformation conditionally
+      if (shouldResize) {
         sharpInstance.resize({
           height: 16383,
           withoutEnlargement: true,
-          kernel: sharp.kernel.lanczos3, // Use Lanczos3 for resizing
+          kernel: sharp.kernel.lanczos3,
         });
       }
 
-      // Apply grayscale and output format
       sharpInstance
         .grayscale(req.params.grayscale)
         .toFormat(format, {
@@ -106,61 +108,69 @@ function compress(req, res, input) {
           effort: 0,
         });
 
-      // Forward data manually
+      // Handle input stream
       input.on("data", (chunk) => {
-        if (!sharpInstance.write(chunk)) {
-          input.pause();
-          sharpInstance.once("drain", () => {
-            input.resume();
-          });
+        try {
+          sharpInstance.write(chunk);
+        } catch (err) {
+          console.error("Error writing chunk to Sharp:", err);
+          if (!res.headersSent) {
+            redirect(req, res);
+          }
         }
       });
 
       input.on("end", () => {
-        sharpInstance.end();
-      });
-
-      input.on("error", (err) => {
-        console.error(err);
-        if (!res.headersSent && !infoReceived) {
-          redirect(req, res);
+        try {
+          sharpInstance.end();
+        } catch (err) {
+          console.error("Error ending Sharp instance:", err);
+          if (!res.headersSent) {
+            redirect(req, res);
+          }
         }
       });
 
-      sharpInstance.on("info", (info) => {
-        infoReceived = true;
-        res.setHeader("content-type", "image/" + format);
-        res.setHeader("content-length", info.size);
-        res.setHeader("x-original-size", req.params.originSize);
-        res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-        res.statusCode = 200;
-      });
-
-      sharpInstance.on("data", (chunk) => {
-        if (!res.write(chunk)) {
-          sharpInstance.pause();
-          res.once("drain", () => {
-            sharpInstance.resume();
-          });
-        }
-      });
-
-      sharpInstance.on("end", () => {
-        res.end();
-      });
-
-      sharpInstance.on("error", (err) => {
-        console.error(err);
-        if (!res.headersSent && !infoReceived) {
-          redirect(req, res);
-        }
-      });
+      // Handle Sharp events
+      sharpInstance
+        .on("info", (info) => {
+          infoReceived = true;
+          if (!res.headersSent) {
+            res.setHeader("content-type", "image/" + format);
+            res.setHeader("content-length", info.size);
+            res.setHeader("x-original-size", req.params.originSize);
+            res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+            res.statusCode = 200;
+          }
+        })
+        .on("data", (chunk) => {
+          try {
+            if (!res.write(chunk)) {
+              sharpInstance.pause();
+              res.once("drain", () => sharpInstance.resume());
+            }
+          } catch (err) {
+            console.error("Error writing chunk to response:", err);
+          }
+        })
+        .on("end", () => {
+          res.end();
+        })
+        .on("error", (err) => {
+          console.error("Sharp transformation error:", err);
+          if (!res.headersSent && !infoReceived) {
+            redirect(req, res);
+          }
+        });
     })
     .catch((err) => {
-      console.error(err);
-      redirect(req, res);
+      console.error("Error reading image metadata:", err);
+      if (!res.headersSent) {
+        redirect(req, res);
+      }
     });
 }
+
 
 
 
