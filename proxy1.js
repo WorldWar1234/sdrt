@@ -107,7 +107,7 @@ function compress(req, res, input) {
           effort: 0,
         });
 
-      input
+      sharpInstance
        //.pipe(SharpInstance)
         .on("error", () => {
           if (!res.headersSent && !infoReceived) {
