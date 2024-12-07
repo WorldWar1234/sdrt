@@ -158,47 +158,6 @@ function compress(req, res, input) {
   });
 }
 
-    try {
-      sharpInstance.end(); // Signal the end of input data
-    } catch (err) {
-      console.error("Error ending Sharp instance:", err);
-      if (!res.headersSent) {
-        redirect(req, res);
-      }
-    }
-  });
-
-  sharpInstance
-    .on("info", (info) => {
-      infoReceived = true;
-      if (!res.headersSent) {
-        res.setHeader("content-type", "image/" + format);
-        res.setHeader("content-length", info.size);
-        res.setHeader("x-original-size", req.params.originSize);
-        res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-        res.statusCode = 200;
-      }
-    })
-    .on("data", (chunk) => {
-      try {
-        if (!res.write(chunk)) {
-          sharpInstance.pause();
-          res.once("drain", () => sharpInstance.resume());
-        }
-      } catch (err) {
-        console.error("Error writing chunk to response:", err);
-      }
-    })
-    .on("end", () => {
-      res.end();
-    })
-    .on("error", (err) => {
-      console.error("Sharp transformation error:", err);
-      if (!res.headersSent && !infoReceived) {
-        redirect(req, res);
-      }
-    });
-}
 
 
 
