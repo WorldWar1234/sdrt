@@ -85,64 +85,62 @@ function compress(req, res, input) {
   });
 
   let infoReceived = false;
+  let buffer = Buffer.alloc(0);
 
-  // Check metadata to decide resizing
-  sharpInstance
-    .metadata()
-    .then((metadata) => {
-      const transform = sharpInstance;
+  input.on("data", (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+  });
 
-      // Resize only if the height exceeds 16,383 pixels
+  input.on("end", async () => {
+    try {
+      const metadata = await sharpInstance.metadata();
+
+      // Resize if height exceeds 16,383 pixels
       if (metadata.height > 16383) {
-        transform.resize({
+        sharpInstance.resize({
           height: 16383,
           withoutEnlargement: true,
-          kernel: sharp.kernel.lanczos3, // Use Lanczos3 for resizing
+          kernel: sharp.kernel.lanczos3,
         });
       }
 
-      // Apply grayscale and output format
-      transform
+      // Apply grayscale and format
+      sharpInstance
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
           effort: 0,
         });
 
-      input
-        .pipe(transform)
-        .on("error", () => {
-          if (!res.headersSent && !infoReceived) {
-            redirect(req, res);
-          }
-        })
-        .on("info", (info) => {
-          infoReceived = true;
-          res.setHeader("content-type", "image/" + format);
-          res.setHeader("content-length", info.size);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-          res.statusCode = 200;
-        })
-        .on("data", (chunk) => {
-          if (!res.write(chunk)) {
-            input.pause();
-            res.once("drain", () => {
-              input.resume();
-            });
-          }
-        })
-        .on("end", () => {
-          res.end();
-        });
-    })
-    .catch((err) => {
-      console.error(err);
-      redirect(req, res);
-    });
+      const processedBuffer = await sharpInstance.toBuffer({ resolveWithObject: true });
 
-  input.pipe(sharpInstance);
+      if (!infoReceived) {
+        infoReceived = true;
+        const info = processedBuffer.info;
+
+        res.setHeader("content-type", "image/" + format);
+        res.setHeader("content-length", info.size);
+        res.setHeader("x-original-size", req.params.originSize);
+        res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+        res.statusCode = 200;
+      }
+
+      res.write(processedBuffer.data);
+      res.end();
+    } catch (error) {
+      console.error(error);
+      redirect(req, res);
+    }
+  });
+
+  input.on("error", (err) => {
+    console.error(err);
+    if (!res.headersSent) {
+      redirect(req, res);
+    }
+  });
 }
+
 
 
 
