@@ -105,7 +105,7 @@ function redirect(req, res) {
         });
 
       // Pipe the input through our sharp instance
-        sharpInstance
+      sharpInstance
         .on("info", (info) => {
           // Set headers for the response
           res.setHeader("content-type", `image/${format}`);
@@ -115,23 +115,25 @@ function redirect(req, res) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
+          // Check if the response stream is writable
           if (!res.write(chunk)) {
-      input.pause();
-      res.once("drain", () => {
-        input.resume();
-      });
-    }
+            // If the response stream is not writable, pause the sharpInstance
+            sharpInstance.pause();
+            // Listen for the 'drain' event to resume the sharpInstance
+            res.once("drain", () => {
+              sharpInstance.resume();
+            });
+          }
         })
         .on("end", () => res.end()) // When we're done, we're done
         .on("error", (err) => {
-            redirect(req, res);
-          
+          redirect(req, res);
         });
-    })
+    });
 
   // Start the compression process
   input.pipe(sharpInstance);
-  }
+}
 
 
 
