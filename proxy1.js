@@ -107,6 +107,8 @@ function compress(req, res, input) {
           effort: 0,
         });
 
+      input.pipe(sharpInstance);
+
       sharpInstance
        //.pipe(SharpInstance)
         .on("error", () => {
@@ -138,8 +140,6 @@ function compress(req, res, input) {
       console.error(err);
       redirect(req, res);
     });
-
-  input.pipe(sharpInstance);
 }
 
 
