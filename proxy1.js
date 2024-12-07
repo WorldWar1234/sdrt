@@ -74,73 +74,71 @@ function redirect(req, res) {
 function compress(req, res, input) {
   const format = "webp";
 
-  sharp.cache(false);
-  sharp.simd(false);
-  sharp.concurrency(1);
+sharp.cache(false);
+sharp.simd(false);
+sharp.concurrency(1);
 
-  const sharpInstance = sharp({
-    unlimited: true,
-    failOn: "none",
-    limitInputPixels: false,
-  });
-
-  let infoReceived = false;
+const sharpInstance = sharp({
+  unlimited: true,
+  failOn: "none",
+  limitInputPixels: false,
+});
 
   // Check metadata to decide resizing
-  sharpInstance
-    .metadata()
-    .then((metadata) => {
-      const transform = sharpInstance;
+sharpInstance
+  .metadata()
+  .then(handleMetadata)
+  .catch((err) => {
+    console.error(err);
+    redirect(req, res);
+  });
 
-      // Resize only if the height exceeds 16,383 pixels
-      if (metadata.height > 16383) {
-        transform.resize(null, 16383, { withoutEnlargement: true });
-      }
+let infoReceived = false;
 
-      // Apply grayscale and output format
-      transform
-        .grayscale(req.params.grayscale)
-        .toFormat(format, {
-          quality: req.params.quality,
-          effort: 0,
-        });
+// Function to handle metadata and resizing
+const handleMetadata = (metadata) => {
+  const transform = sharpInstance;
 
-      input
-        .pipe(transform)
-        .on("error", () => {
-          if (!res.headersSent && !infoReceived) {
-            redirect(req, res);
-          }
-        })
-        .on("info", (info) => {
-          infoReceived = true;
-          res.setHeader("content-type", "image/" + format);
-          res.setHeader("content-length", info.size);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-          res.statusCode = 200;
-        })
-        .on("data", (chunk) => {
-          if (!res.write(chunk)) {
-            input.pause();
-            res.once("drain", () => {
-              input.resume();
-            });
-          }
-        })
-        .on("end", () => {
-          res.end();
-        });
-    })
-    .catch((err) => {
-      console.error(err);
-      redirect(req, res);
+  // Resize only if the height exceeds 16,383 pixels
+  if (metadata.height > 16383) {
+    transform.resize(null, 16383, { withoutEnlargement: true });
+  }
+
+  // Apply grayscale and output format
+  transform
+    .grayscale(req.params.grayscale)
+    .toFormat(format, {
+      quality: req.params.quality,
+      effort: 0,
     });
 
-  input.pipe(sharpInstance);
-}
-
-
+  input
+    .pipe(transform)
+    .on("error", () => {
+      if (!res.headersSent && !infoReceived) {
+        redirect(req, res);
+      }
+    })
+    .on("info", (info) => {
+      infoReceived = true;
+      res.setHeader("content-type", "image/" + format);
+      res.setHeader("content-length", info.size);
+      res.setHeader("x-original-size", req.params.originSize);
+      res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+      res.statusCode = 200;
+    })
+    .on("data", (chunk) => {
+      if (!res.write(chunk)) {
+        input.pause();
+        res.once("drain", () => {
+          input.resume();
+        });
+      }
+    })
+    .on("end", () => {
+      res.end();
+    });
+};
 
 
 
