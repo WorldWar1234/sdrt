@@ -71,61 +71,74 @@ function redirect(req, res) {
  * @param {http.IncomingMessage} input - The input stream for image data.
  */
 function compress(req, res, input) {
+async function compress(req, res, input) {
   const format = "jpeg";
 
   sharp.cache(false);
   sharp.simd(false);
   sharp.concurrency(1);
 
-  const sharpInstance = sharp({
-    unlimited: true,
-    failOn: "none",
-    limitInputPixels: false,
-  });
+  try {
+    // Create a Sharp instance for metadata extraction
+    const metadataExtractor = sharp({
+      unlimited: true,
+      failOn: "none",
+      limitInputPixels: false,
+    });
 
-  let infoReceived = false;
+    // Extract metadata
+    const metadata = await metadataExtractor
+      .clone() // Clone to avoid altering the original instance
+      .metadata();
 
-  input
-    .pipe(
-      sharpInstance.metadata().then((metadata) => {
-        // Conditional transformations based on height
-        if (metadata.height > 16383) {
-          return sharpInstance
-            .resize({
-              height: 16383,
-              withoutEnlargement: true,
-              kernel: sharp.kernel.lanczos3,
-            })
-            .grayscale(req.params.grayscale)
-            .toFormat(format, {
-              quality: req.params.quality,
-              effort: 0,
-            });
-        } else {
-          // Passthrough stream for images that don't need compression
-          return sharpInstance.toFormat(format, {
-            quality: req.params.quality,
-          });
+    let transform = sharp({
+      unlimited: true,
+      failOn: "none",
+      limitInputPixels: false,
+    });
+
+    // Apply transformations conditionally
+    if (metadata.height > 16383) {
+      transform = transform
+        .resize({
+          height: 16383,
+          withoutEnlargement: true,
+          kernel: sharp.kernel.lanczos3,
+        })
+        .grayscale(req.params.grayscale);
+    }
+
+    transform = transform.toFormat(format, {
+      quality: req.params.quality,
+      effort: 0,
+    });
+
+    let infoReceived = false;
+
+    // Stream the input through the transform and to the response
+    input
+      .pipe(transform)
+      .on("info", (info) => {
+        infoReceived = true;
+        if (!res.headersSent) {
+          res.setHeader("content-type", "image/" + format);
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+          res.statusCode = 200;
         }
       })
-    )
-    .on("info", (info) => {
-      infoReceived = true;
-      if (!res.headersSent) {
-        res.setHeader("content-type", "image/" + format);
-        res.setHeader("content-length", info.size);
-        res.setHeader("x-original-size", req.params.originSize);
-        res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-        res.statusCode = 200;
-      }
-    })
-    .on("error", (err) => {
-      console.error(err);
-      if (!res.headersSent && !infoReceived) {
-        redirect(req, res);
-      }
-    })
-    .pipe(res);
+      .on("error", (err) => {
+        console.error(err);
+        if (!res.headersSent && !infoReceived) {
+          redirect(req, res);
+        }
+      })
+      .pipe(res);
+  } catch (err) {
+    console.error(err);
+    redirect(req, res);
+  }
 }
 
 
