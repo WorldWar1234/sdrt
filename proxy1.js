@@ -115,17 +115,9 @@ function redirect(req, res) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          // Check if the response stream is writable
-          if (!res.write(chunk)) {
-            // If the response stream is not writable, pause the sharpInstance
-            sharpInstance.pause();
-            // Listen for the 'drain' event to resume the sharpInstance
-            res.once("drain", () => {
-              sharpInstance.resume();
-            });
-          }
+          res.write(chunk);
         })
-        .on("end", () => res.end()) // When we're done, we're done
+        .on("end", () => res.end();) // When we're done, we're done
         .on("error", (err) => {
           redirect(req, res);
         });
