@@ -90,19 +90,17 @@ function compress(req, res, input) {
   sharpInstance
     .metadata()
     .then((metadata) => {
-      const transform = sharpInstance;
 
       // Resize only if the height exceeds 16,383 pixels
       if (metadata.height > 16383) {
         transform.resize({
           height: 16383,
-          withoutEnlargement: true,
-          kernel: sharp.kernel.lanczos3, // Use Lanczos3 for resizing
+          withoutEnlargement: true
         });
       }
 
       // Apply grayscale and output format
-      transform
+      sharpInstance
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
@@ -110,7 +108,7 @@ function compress(req, res, input) {
         });
 
       input
-        .pipe(transform)
+       //.pipe(SharpInstance)
         .on("error", () => {
           if (!res.headersSent && !infoReceived) {
             redirect(req, res);
