@@ -71,7 +71,7 @@ function redirect(req, res) {
  * @param {http.IncomingMessage} input - The input stream for image data.
  */
 
-  function compress(req, res, input) {
+ function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg";
 
   // Setting up sharp like a digital artist's toolkit
@@ -105,7 +105,7 @@ function redirect(req, res) {
         });
 
       // Pipe the input through our sharp instance
-      sharpInstance
+        sharpInstance
         .on("info", (info) => {
           // Set headers for the response
           res.setHeader("content-type", `image/${format}`);
@@ -115,17 +115,18 @@ function redirect(req, res) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          res.write(chunk)
+          res.write(chunk);
         })
         .on("end", () => res.end()) // When we're done, we're done
         .on("error", (err) => {
-          redirect(req, res);
+            redirect(req, res);
+          
         });
-    });
+    })
 
   // Start the compression process
   input.pipe(sharpInstance);
-}
+  }
 
 
 
