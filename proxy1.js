@@ -113,17 +113,17 @@ function redirect(req, res) {
           res.setHeader("x-original-size", req.params.originSize);
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
           res.statusCode = 200;
-        });
+        })
         .on("data", (chunk) => {
           res.write(chunk);
-        });
+        })
         .on('end', () => {
           res.end();
-        });
+        })
         .on("error", (err) => {
             redirect(req, res);
           
-        });
+        })
     })
 
   // Start the compression process
