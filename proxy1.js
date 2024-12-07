@@ -85,26 +85,20 @@ function compress(req, res, input) {
   });
 
   let infoReceived = false;
-  let buffer = Buffer.alloc(0);
 
-  input.on("data", (chunk) => {
-    buffer = Buffer.concat([buffer, chunk]);
-  });
-
-  input.on("end", async () => {
-    try {
-      const metadata = await sharpInstance.metadata();
-
-      // Resize if height exceeds 16,383 pixels
+  // Check metadata to decide resizing
+  sharpInstance
+    .metadata()
+    .then((metadata) => {
       if (metadata.height > 16383) {
         sharpInstance.resize({
           height: 16383,
           withoutEnlargement: true,
-          kernel: sharp.kernel.lanczos3,
+          kernel: sharp.kernel.lanczos3, // Use Lanczos3 for resizing
         });
       }
 
-      // Apply grayscale and format
+      // Apply grayscale and output format
       sharpInstance
         .grayscale(req.params.grayscale)
         .toFormat(format, {
@@ -112,34 +106,62 @@ function compress(req, res, input) {
           effort: 0,
         });
 
-      const processedBuffer = await sharpInstance.toBuffer({ resolveWithObject: true });
+      // Forward data manually
+      input.on("data", (chunk) => {
+        if (!sharpInstance.write(chunk)) {
+          input.pause();
+          sharpInstance.once("drain", () => {
+            input.resume();
+          });
+        }
+      });
 
-      if (!infoReceived) {
+      input.on("end", () => {
+        sharpInstance.end();
+      });
+
+      input.on("error", (err) => {
+        console.error(err);
+        if (!res.headersSent && !infoReceived) {
+          redirect(req, res);
+        }
+      });
+
+      sharpInstance.on("info", (info) => {
         infoReceived = true;
-        const info = processedBuffer.info;
-
         res.setHeader("content-type", "image/" + format);
         res.setHeader("content-length", info.size);
         res.setHeader("x-original-size", req.params.originSize);
         res.setHeader("x-bytes-saved", req.params.originSize - info.size);
         res.statusCode = 200;
-      }
+      });
 
-      res.write(processedBuffer.data);
-      res.end();
-    } catch (error) {
-      console.error(error);
-      redirect(req, res);
-    }
-  });
+      sharpInstance.on("data", (chunk) => {
+        if (!res.write(chunk)) {
+          sharpInstance.pause();
+          res.once("drain", () => {
+            sharpInstance.resume();
+          });
+        }
+      });
 
-  input.on("error", (err) => {
-    console.error(err);
-    if (!res.headersSent) {
+      sharpInstance.on("end", () => {
+        res.end();
+      });
+
+      sharpInstance.on("error", (err) => {
+        console.error(err);
+        if (!res.headersSent && !infoReceived) {
+          redirect(req, res);
+        }
+      });
+    })
+    .catch((err) => {
+      console.error(err);
       redirect(req, res);
-    }
-  });
+    });
 }
+
 
 
 
