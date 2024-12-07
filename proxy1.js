@@ -85,8 +85,6 @@ function redirect(req, res) {
     limitInputPixels: false, // No pixel limits here, let's live on the edge
   });
 
- // let infoReceived = false;
-
   sharpInstance
     .metadata()
     .then((metadata) => {
@@ -107,8 +105,6 @@ function redirect(req, res) {
         });
 
       // Pipe the input through our sharp instance
-     /* input
-        .pipe(sharpInstance)*/
         sharpInstance
         .on("info", (info) => {
           // Set headers for the response
@@ -119,7 +115,12 @@ function redirect(req, res) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          res.write(chunk)
+          if (!res.write(chunk)) {
+      input.pause();
+      res.once("drain", () => {
+        input.resume();
+      });
+    }
         })
         .on("end", () => res.end()) // When we're done, we're done
         .on("error", (err) => {
