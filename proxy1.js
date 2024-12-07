@@ -86,92 +86,63 @@ function compress(req, res, input) {
 
   let infoReceived = false;
 
-  // Get image metadata first
+  // Check metadata to decide resizing
   sharpInstance
     .metadata()
     .then((metadata) => {
-      const shouldResize = metadata.height > 16383;
+      const transform = sharpInstance;
 
-      // Configure the transformation conditionally
-      if (shouldResize) {
-        sharpInstance.resize({
+      // Resize only if the height exceeds 16,383 pixels
+      if (metadata.height > 16383) {
+        transform.resize({
           height: 16383,
           withoutEnlargement: true,
-          kernel: sharp.kernel.lanczos3,
+          kernel: sharp.kernel.lanczos3, // Use Lanczos3 for resizing
         });
       }
 
-      sharpInstance
+      // Apply grayscale and output format
+      transform
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
           effort: 0,
         });
 
-      // Handle input stream
-      input.on("data", (chunk) => {
-        try {
-          sharpInstance.write(chunk);
-        } catch (err) {
-          console.error("Error writing chunk to Sharp:", err);
-          if (!res.headersSent) {
+      input
+        .pipe(transform)
+        .on("error", () => {
+          if (!res.headersSent && !infoReceived) {
             redirect(req, res);
-          }
-        }
-      });
-
-      input.on("end", () => {
-        try {
-          sharpInstance.end();
-        } catch (err) {
-          console.error("Error ending Sharp instance:", err);
-          if (!res.headersSent) {
-            redirect(req, res);
-          }
-        }
-      });
-
-      // Handle Sharp events
-      sharpInstance
-        .on("info", (info) => {
-          infoReceived = true;
-          if (!res.headersSent) {
-            res.setHeader("content-type", "image/" + format);
-            res.setHeader("content-length", info.size);
-            res.setHeader("x-original-size", req.params.originSize);
-            res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-            res.statusCode = 200;
           }
         })
+        .on("info", (info) => {
+          infoReceived = true;
+          res.setHeader("content-type", "image/" + format);
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+          res.statusCode = 200;
+        })
         .on("data", (chunk) => {
-          try {
-            if (!res.write(chunk)) {
-              sharpInstance.pause();
-              res.once("drain", () => sharpInstance.resume());
-            }
-          } catch (err) {
-            console.error("Error writing chunk to response:", err);
+          if (!res.write(chunk)) {
+            input.pause();
+            res.once("drain", () => {
+              input.resume();
+            });
           }
         })
         .on("end", () => {
           res.end();
-        })
-        .on("error", (err) => {
-          console.error("Sharp transformation error:", err);
-          if (!res.headersSent && !infoReceived) {
-            redirect(req, res);
-          }
         });
     })
     .catch((err) => {
-      console.error("Error reading image metadata:", err);
-      if (!res.headersSent) {
-        redirect(req, res);
-      }
+      console.error(err);
+      redirect(req, res);
     });
+
+  input.pipe(sharpInstance);
 }
-
-
 
 
 
