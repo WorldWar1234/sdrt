@@ -4,7 +4,7 @@ import http from "http";
 import https from "https";
 import sharp from "sharp";
 import pick from "./pick.js";
-
+import { availableParallelism } from 'os';
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
@@ -77,7 +77,7 @@ function redirect(req, res) {
   // Setting up sharp like a digital artist's toolkit
   sharp.cache(false); // No caching, we're living in the moment
   sharp.simd(false); // SIMD? More like SIM-Don't
-  sharp.concurrency(1); // One at a time, please. This isn't a race.
+  sharp.concurrency(availableParallelism());
 
   const sharpInstance = sharp({
     unlimited: true, // Go wild, but not too wild
