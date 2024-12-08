@@ -72,7 +72,7 @@ function redirect(req, res) {
  */
 
  function compress(req, res, input) {
-  const format = "jpeg";
+  const format = "webp";
 
   // Setting up sharp like a digital artist's toolkit
   sharp.cache(false); // No caching, we're living in the moment
