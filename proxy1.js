@@ -102,7 +102,7 @@ function redirect(req, res) {
         .toFormat(format, {
           quality: req.params.quality, // Quality is key, but we're on a budget
           effort: 0, // Minimal effort, maximum results. The dream, right?
-        })
+        });
 
       // Pipe the input through our sharp instance
         sharpInstance
@@ -121,11 +121,9 @@ function redirect(req, res) {
           res.end()
         })
         .on("error", (err) => {
-            redirect(req, res)
-          
-        })
-    })
-
+            redirect(req, res);
+        });
+    });
   // Start the compression process
   input.pipe(sharpInstance);
   }
