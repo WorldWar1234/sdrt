@@ -193,12 +193,12 @@ function hhproxy(req, res) {
         });
 
         originRes.on('data', (chunk) => {
-          res.write(chunk);
-        });
+          res.write(chunk)
+        })
 
         originRes.on('end', () => {
-          res.end();
-        });
+          res.end()
+        })
       }
     });
 
