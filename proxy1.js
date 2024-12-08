@@ -46,21 +46,18 @@ function copyHeaders(source, target) {
  * @param {http.ServerResponse} res - The HTTP response.
  */
 function redirect(req, res) {
-  if (res.headersSent) return; // If headers are already sent, we can't modify them
+  if (res.headersSent) return;
 
-  // Set the status code and necessary headers for redirection
   res.writeHead(302, {
     Location: encodeURI(req.params.url),
-    'Content-Length': '0' // No body in a redirect response
+    'Content-Length': '0'
   });
 
-  // Remove headers that might interfere with caching or freshness
   res.removeHeader("cache-control");
   res.removeHeader("expires");
   res.removeHeader("date");
   res.removeHeader("etag");
 
-  // End the response, sending the headers
   res.end();
 }
 
@@ -70,44 +67,37 @@ function redirect(req, res) {
  * @param {http.ServerResponse} res - The HTTP response.
  * @param {http.IncomingMessage} input - The input stream for image data.
  */
+function compress(req, res, input) {
+  const format = req.params.webp ? "webp" : "jpeg";
 
- function compress(req, res, input) {
-  const format = "webp";
-
-  // Setting up sharp like a digital artist's toolkit
-  sharp.cache(false); // No caching, we're living in the moment
-  sharp.simd(false); // SIMD? More like SIM-Don't
+  sharp.cache(false);
+  sharp.simd(false);
   sharp.concurrency(availableParallelism());
-
   const sharpInstance = sharp({
-    unlimited: true, // Go wild, but not too wild
-    failOn: "none", // If it fails, just keep going. Life's too short for errors
-    limitInputPixels: false // No pixel limits here, let's live on the edge
+    unlimited: true,
+    failOn: "none",
+    limitInputPixels: false
   });
 
   sharpInstance
     .metadata()
     .then((metadata) => {
-      // If the image is too tall, let's shrink it. No skyscraper images here
       if (metadata.height > 16383) {
         sharpInstance.resize({
           height: 16383,
-          withoutEnlargement: true // No stretching, just shrinking
-        })
+          withoutEnlargement: true
+        });
       }
 
-      // Here's where the magic happens
       sharpInstance
-        .grayscale(req.params.grayscale) // Black and white? Sure, why not?
+        .grayscale(req.params.grayscale)
         .toFormat(format, {
-          quality: req.params.quality, // Quality is key, but we're on a budget
-          effort: 0, // Minimal effort, maximum results. The dream, right?
+          quality: req.params.quality,
+          effort: 0,
         });
 
-      // Pipe the input through our sharp instance
-        sharpInstance
+      sharpInstance
         .on("info", (info) => {
-          // Set headers for the response
           res.setHeader("content-type", `image/${format}`);
           res.setHeader("content-length", info.size);
           res.setHeader("x-original-size", req.params.originSize);
@@ -115,21 +105,18 @@ function redirect(req, res) {
           res.statusCode = 200;
         })
         .on("data", (chunk) => {
-          res.write(chunk)
+          res.write(chunk);
         })
         .on('end', () => {
-          res.end()
+          res.end();
         })
         .on("error", (err) => {
-            redirect(req, res);
+          redirect(req, res);
         });
     });
-  // Start the compression process
+
   input.pipe(sharpInstance);
-  }
-
-
-
+}
 
 /**
  * Main proxy handler for bandwidth optimization.
@@ -140,7 +127,6 @@ function hhproxy(req, res) {
   let url = req.query.url;
   if (!url) return res.end("bandwidth-hero-proxy");
 
- // const cleanedUrl = url.replace(/http:\/\/1\.1\.\d{1,3}\.\d{1,3}\/bmi\//i, '');
   req.params = {
     url: decodeURIComponent(url),
     webp: !req.query.jpeg,
@@ -148,7 +134,7 @@ function hhproxy(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
   };
 
-  if (req.headers["via"] === "1.1 bandwidth-hero" && 
+  if (req.headers["via"] === "1.1 bandwidth-hero" &&
       ["127.0.0.1", "::1"].includes(req.headers["x-forwarded-for"] || req.ip)) {
     return redirect(req, res);
   }
@@ -193,12 +179,12 @@ function hhproxy(req, res) {
         });
 
         originRes.on('data', (chunk) => {
-          res.write(chunk)
-        })
+          res.write(chunk);
+        });
 
         originRes.on('end', () => {
-          res.end()
-        })
+          res.end();
+        });
       }
     });
 
