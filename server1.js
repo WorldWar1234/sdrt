@@ -1,5 +1,6 @@
-import { createServer } from "@cmmv/server";
-import hhproxy from "./proxy1.js";
+import pkg from "@cmmv/server";
+const { createServer } = pkg;
+import hhproxy from "./hhproxy.js";
 
 // Define server configuration
 const config = {
