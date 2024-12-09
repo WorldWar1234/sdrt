@@ -1,7 +1,6 @@
 {
   "name": "node-app-version",
   "main": "server.js",
-  "type": "module",
   "private": true,
   "version": "1.0.1",
   "description": "Data service",
