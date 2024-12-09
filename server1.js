@@ -1,8 +1,7 @@
 "use strict";
 
 // Import necessary modules
-import pkg from '@cmmv/server';
-const { CmmvServer } = pkg;
+import CmmvServer from '@cmmv/server'; // Adjust this import based on the actual export of the module
 import hhproxy from './proxy1.js'; // Assuming proxy.js is in the same directory and also uses ESM
 import { URL } from 'url';
 
