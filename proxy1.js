@@ -58,7 +58,6 @@ function redirect(req, res) {
   res.removeHeader("date");
   res.removeHeader("etag");
   res.setHeader("location", encodeURI(req.params.url));
-  res.statusCode = 302;
   res.end();
 }
 
@@ -98,7 +97,6 @@ function compress(req, res, input) {
           res.setHeader("content-length", info.size);
           res.setHeader("x-original-size", req.params.originSize);
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-          res.statusCode = 200;
         })
         .on("data", chunk => {
           res.write(chunk);
