@@ -1,19 +1,21 @@
 "use strict";
 
-import cmmv, { json, urlencoded } from '@cmmv/server';
-import proxy from "./proxy1.js";
+import { createServer, json, urlencoded } from '@cmmv/server';
+import hhproxy from './proxy.js';
 
 const PORT = process.env.PORT || 8080;
 
 // Create the server
-const app = cmmv();
+const app = createServer();
 
 // Use JSON and URL-encoded plugins to parse data
 app.use(json());
 app.use(urlencoded({ extended: true }));
 
+// Setup the route with the proxy handler
+app.get('/hhproxy', hhproxy);
+
 // Middleware to handle favicon requests
-app.get('/', proxy);
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Start the server
