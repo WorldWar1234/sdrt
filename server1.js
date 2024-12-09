@@ -1,20 +1,16 @@
-import pkg from "@cmmv/server";
-const { createServer } = pkg;
-import hhproxy from "./proxy1.js";
+// server.js
+const { createServer } = require('@cmmv/server');
+const hhproxy = require('./proxy1.js');
 
-// Define server configuration
-const config = {
-  port: process.env.PORT || 3000,
-  host: "0.0.0.0",
-};
+const port = 3000;
 
 // Create the server
-const server = createServer((req, res) => {
-  // Route requests to the hhproxy handler
-  hhproxy(req, res);
+const server = createServer({
+  route: '/proxy1',
+  handler: hhproxy
 });
 
 // Start the server
-server.listen(config.port, config.host, () => {
-  console.log(`CMMV server is running on http://${config.host}:${config.port}`);
+server.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
 });
