@@ -1,7 +1,7 @@
 "use strict";
 
 import { createServer, json, urlencoded } from '@cmmv/server';
-import hhproxy from './proxy.js';
+import hhproxy from './proxy1.js';
 
 const PORT = process.env.PORT || 8080;
 
@@ -13,7 +13,7 @@ app.use(json());
 app.use(urlencoded({ extended: true }));
 
 // Setup the route with the proxy handler
-app.get('/hhproxy', hhproxy);
+app.get('/', hhproxy);
 
 // Middleware to handle favicon requests
 app.get('/favicon.ico', (req, res) => res.status(204).end());
