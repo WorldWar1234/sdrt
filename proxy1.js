@@ -1,16 +1,23 @@
-// proxy.js
-const http = require("http");
-const https = require("https");
-const sharp = require("sharp");
-const pick = require("./pick.js");
-const { availableParallelism } = require("os");
+"use strict";
 
+import http from "http";
+import https from "https";
+import sharp from "sharp";
+import pick from "./pick.js";
+import { availableParallelism } from 'os';
+
+// Constants
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const MAX_HEIGHT = 16383;
 const USER_AGENT = "Bandwidth-Hero Compressor";
 
+/**
+ * Determines if image compression should be applied based on request parameters.
+ * @param {http.IncomingMessage} req - The incoming HTTP request.
+ * @returns {boolean} - Whether compression should be performed.
+ */
 function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
   return (
@@ -22,6 +29,11 @@ function shouldCompress(req) {
   );
 }
 
+/**
+ * Copies headers from source to target, logging errors if any.
+ * @param {http.IncomingMessage} source - The source of headers.
+ * @param {http.ServerResponse} target - The target for headers.
+ */
 function copyHeaders(source, target) {
   Object.entries(source.headers).forEach(([key, value]) => {
     try {
@@ -32,6 +44,11 @@ function copyHeaders(source, target) {
   });
 }
 
+/**
+ * Redirects the request to the original URL with proper headers.
+ * @param {http.IncomingMessage} req - The incoming HTTP request.
+ * @param {http.ServerResponse} res - The HTTP response.
+ */
 function redirect(req, res) {
   if (!res.headersSent) {
     res.writeHead(302, {
@@ -43,6 +60,12 @@ function redirect(req, res) {
   }
 }
 
+/**
+ * Compresses and transforms the image according to request parameters.
+ * @param {http.IncomingMessage} req - The incoming HTTP request.
+ * @param {http.ServerResponse} res - The HTTP response.
+ * @param {http.IncomingMessage} input - The input stream for image data.
+ */
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg";
   const sharpInstance = sharp({
@@ -60,7 +83,7 @@ function compress(req, res, input) {
     .then(metadata => {
       if (metadata.height > MAX_HEIGHT) {
         sharpInstance.resize({
-          width: null,
+          width: null, // Declared width as null
           height: MAX_HEIGHT,
           withoutEnlargement: true
         });
@@ -88,6 +111,11 @@ function compress(req, res, input) {
   input.pipe(sharpInstance);
 }
 
+/**
+ * Main proxy handler for bandwidth optimization.
+ * @param {http.IncomingMessage} req - The incoming HTTP request.
+ * @param {http.ServerResponse} res - The HTTP response.
+ */
 function hhproxy(req, res) {
   let url = req.query.url;
   if (!url) return res.end("bandwidth-hero-proxy");
@@ -159,4 +187,4 @@ function hhproxy(req, res) {
   }
 }
 
-module.exports = hhproxy;
+export default hhproxy;
