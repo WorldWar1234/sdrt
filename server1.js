@@ -1,30 +1,22 @@
 "use strict";
 
-import http from "http";
-import url from "url";
+import cmmv, { json, urlencoded } from '@cmmv/server';
 import proxy from "./proxy1.js";
 
 const PORT = process.env.PORT || 8080;
 
-// Create the HTTP server
-const server = http.createServer((req, res) => {
-  const parsedUrl = url.parse(req.url, true);
+// Create the server
+const app = cmmv();
 
-  // Handle favicon requests
-  if (parsedUrl.pathname === "/favicon.ico") {
-    res.statusCode = 204;
-    res.end();
-    return;
-  }
+// Use JSON and URL-encoded plugins to parse data
+app.use(json());
+app.use(urlencoded({ extended: true }));
 
-  // Attach query parameters to the request object
-  req.query = parsedUrl.query;
-
-  // Use the proxy function to handle the request
-  proxy(req, res);
-});
+// Middleware to handle favicon requests
+app.get('/', proxy);
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Start the server
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
