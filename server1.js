@@ -1,34 +1,30 @@
 "use strict";
 
-// Import necessary modules
-import CmmvServer from '@cmmv/server'; // Adjust this import based on the actual export of the module
-import hhproxy from './proxy1.js'; // Assuming proxy.js is in the same directory and also uses ESM
-import { URL } from 'url';
+import http from "http";
+import url from "url";
+import proxy from "./proxy1.js";
 
-// Create a new CMMV server instance
-const server = new CmmvServer({
-  port: 3000,
-  host: '0.0.0.0',
-});
+const PORT = process.env.PORT || 8080;
 
-// Middleware to handle all requests with the proxy function
-server.use((req, res, next) => {
-  // Parse the URL to extract query parameters
-  const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-  req.query = Object.fromEntries(parsedUrl.searchParams.entries());
-  req.url = parsedUrl.pathname; // This might be needed if hhproxy expects req.url to be just the path
+// Create the HTTP server
+const server = http.createServer((req, res) => {
+  const parsedUrl = url.parse(req.url, true);
 
-  // Call hhproxy with the modified request and response objects
-  hhproxy(req, res);
+  // Handle favicon requests
+  if (parsedUrl.pathname === "/favicon.ico") {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+
+  // Attach query parameters to the request object
+  req.query = parsedUrl.query;
+
+  // Use the proxy function to handle the request
+  proxy(req, res);
 });
 
 // Start the server
-server.start(() => {
-  console.log('Server with proxy functionality is running on port 3000');
-});
-
-// Error handling middleware (if needed)
-server.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send('Something broke!');
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
