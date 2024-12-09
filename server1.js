@@ -1,34 +1,34 @@
 "use strict";
 
-import cmmv, { json, urlencoded } from '@cmmv/server';
-import hhproxy from './proxy1.js';
+// Import necessary modules
+const { CmmvServer } = require('@cmmv/server');
+const hhproxy = require('./proxy1'); // Assuming proxy.js is in the same directory
+const url = require('url');
 
-const host = '0.0.0.0';
-const port = 3000;
+// Create a new CMMV server instance
+const server = new CmmvServer({
+  port: 3000,
+  host: '0.0.0.0',
+});
 
-// Create the server
-const app = cmmv();
+// Middleware to handle all requests with the proxy function
+server.use((req, res, next) => {
+  // Parse the URL to extract query parameters
+  const parsedUrl = url.parse(req.url, true);
+  req.query = parsedUrl.query;
+  req.url = parsedUrl.pathname; // This might be needed if hhproxy expects req.url to be just the path
 
-// Use JSON and URL-encoded plugins to parse data
-app.use(json());
-app.use(urlencoded({ extended: true }));
-
-// Setup the route with the proxy handler
-app.get('/', hhproxy);
-
-// Middleware to handle favicon requests
-/*app.get('/favicon.ico', (req, res) => {
-  // `res` is an object returned from the `@cmmv/server` framework, so it has `.send()` instead of `.status()`
-  res.send().status(204);
-});*/
+  // Call hhproxy with the modified request and response objects
+  hhproxy(req, res);
+});
 
 // Start the server
-app.listen({ host, port })
-  .then(server => {
-    console.log(
-      `Listen on http://${server.address().address}:${server.address().port}`,
-    );
-  })
-  .catch(err => {
-    throw new Error(err.message);
-  });
+server.start(() => {
+  console.log('Server with proxy functionality is running on port 3000');
+});
+
+// Error handling middleware (if needed)
+server.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
+});
