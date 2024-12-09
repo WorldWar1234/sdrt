@@ -50,14 +50,16 @@ function copyHeaders(source, target) {
  * @param {http.ServerResponse} res - The HTTP response.
  */
 function redirect(req, res) {
-  if (!res.headersSent) {
-    res.writeHead(302, {
-      Location: encodeURI(req.params.url),
-      'Content-Length': '0'
-    });
-    ["cache-control", "expires", "date", "etag"].forEach(header => res.removeHeader(header));
-    res.end();
-  }
+  if (res.headersSent) return;
+
+  res.setHeader("content-length", 0);
+  res.removeHeader("cache-control");
+  res.removeHeader("expires");
+  res.removeHeader("date");
+  res.removeHeader("etag");
+  res.setHeader("location", encodeURI(req.params.url));
+  res.statusCode = 302;
+  res.end();
 }
 
 /**
@@ -91,13 +93,13 @@ function compress(req, res, input) {
       return sharpInstance
         .grayscale(req.params.grayscale)
         .toFormat(format, { quality: req.params.quality, effort: 0 })
-        .on("info", info => {
-          res.writeHead(200, {
-            "content-type": `image/${format}`,
-            "content-length": info.size,
-            "x-original-size": req.params.originSize,
-            "x-bytes-saved": req.params.originSize - info.size
-          });
+        .on("info", (info) => {
+          infoReceived = true;
+          res.setHeader("content-type", "image/" + format);
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+          res.statusCode = 200;
         })
         .on("data", chunk => {
           res.write(chunk);
