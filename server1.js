@@ -1,9 +1,9 @@
 "use strict";
 
 // Import necessary modules
-const { CmmvServer } = require('@cmmv/server');
-const hhproxy = require('./proxy1'); // Assuming proxy.js is in the same directory
-const url = require('url');
+import { CmmvServer } from '@cmmv/server';
+import hhproxy from './proxy1.js'; // Assuming proxy.js is in the same directory and also uses ESM
+import { URL } from 'url';
 
 // Create a new CMMV server instance
 const server = new CmmvServer({
@@ -14,8 +14,8 @@ const server = new CmmvServer({
 // Middleware to handle all requests with the proxy function
 server.use((req, res, next) => {
   // Parse the URL to extract query parameters
-  const parsedUrl = url.parse(req.url, true);
-  req.query = parsedUrl.query;
+  const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+  req.query = Object.fromEntries(parsedUrl.searchParams.entries());
   req.url = parsedUrl.pathname; // This might be needed if hhproxy expects req.url to be just the path
 
   // Call hhproxy with the modified request and response objects
