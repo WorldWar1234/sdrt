@@ -1,9 +1,8 @@
 "use strict";
 
-import cmmv from '@cmmv/server';
+import cmmv, { json, urlencoded } from '@cmmv/server';
 import hhproxy from './proxy.js';
 
-const { json, urlencoded } = cmmv;
 const PORT = process.env.PORT || 8080;
 
 // Create the server
