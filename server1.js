@@ -17,10 +17,10 @@ app.use(urlencoded({ extended: true }));
 app.get('/', hhproxy);
 
 // Middleware to handle favicon requests
-app.get('/favicon.ico', (req, res) => {
+/*app.get('/favicon.ico', (req, res) => {
   // `res` is an object returned from the `@cmmv/server` framework, so it has `.send()` instead of `.status()`
   res.send().status(204);
-});
+});*/
 
 // Start the server
 app.listen({ host, port })
