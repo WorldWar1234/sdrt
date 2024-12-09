@@ -5,9 +5,13 @@ import https from "https";
 import sharp from "sharp";
 import pick from "./pick.js";
 import { availableParallelism } from 'os';
+
+// Constants
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
+const MAX_HEIGHT = 16383;
+const USER_AGENT = "Bandwidth-Hero Compressor";
 
 /**
  * Determines if image compression should be applied based on request parameters.
@@ -16,13 +20,13 @@ const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
  */
 function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
-
-  if (!originType.startsWith("image") || originSize === 0 || req.headers.range) return false;
-  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
-  if (!webp && (originType.endsWith("png") || originType.endsWith("gif")) && originSize < MIN_TRANSPARENT_COMPRESS_LENGTH) {
-    return false;
-  }
-  return true;
+  return (
+    originType.startsWith("image") &&
+    originSize > 0 &&
+    !req.headers.range &&
+    !(webp && originSize < MIN_COMPRESS_LENGTH) &&
+    !(!webp && (originType.endsWith("png") || originType.endsWith("gif")) && originSize < MIN_TRANSPARENT_COMPRESS_LENGTH)
+  );
 }
 
 /**
@@ -31,13 +35,13 @@ function shouldCompress(req) {
  * @param {http.ServerResponse} target - The target for headers.
  */
 function copyHeaders(source, target) {
-  for (const [key, value] of Object.entries(source.headers)) {
+  Object.entries(source.headers).forEach(([key, value]) => {
     try {
       target.setHeader(key, value);
     } catch (e) {
       console.log(e.message);
     }
-  }
+  });
 }
 
 /**
@@ -46,19 +50,14 @@ function copyHeaders(source, target) {
  * @param {http.ServerResponse} res - The HTTP response.
  */
 function redirect(req, res) {
-  if (res.headersSent) return;
-
-  res.writeHead(302, {
-    Location: encodeURI(req.params.url),
-    'Content-Length': '0'
-  });
-
-  res.removeHeader("cache-control");
-  res.removeHeader("expires");
-  res.removeHeader("date");
-  res.removeHeader("etag");
-
-  res.end();
+  if (!res.headersSent) {
+    res.writeHead(302, {
+      Location: encodeURI(req.params.url),
+      'Content-Length': '0'
+    });
+    ["cache-control", "expires", "date", "etag"].forEach(header => res.removeHeader(header));
+    res.end();
+  }
 }
 
 /**
@@ -69,50 +68,44 @@ function redirect(req, res) {
  */
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg";
-
-  sharp.cache(false);
-  sharp.simd(false);
-  sharp.concurrency(availableParallelism());
   const sharpInstance = sharp({
     unlimited: true,
     failOn: "none",
     limitInputPixels: false
   });
 
+  sharp.cache(false);
+  sharp.simd(false);
+  sharp.concurrency(availableParallelism());
+
   sharpInstance
     .metadata()
-    .then((metadata) => {
-      if (metadata.height > 16383) {
+    .then(metadata => {
+      if (metadata.height > MAX_HEIGHT) {
         sharpInstance.resize({
-          height: 16383,
+          width: null, // Declared width as null
+          height: MAX_HEIGHT,
           withoutEnlargement: true
         });
       }
-
-      sharpInstance
+      return sharpInstance
         .grayscale(req.params.grayscale)
-        .toFormat(format, {
-          quality: req.params.quality,
-          effort: 0,
-        });
-
-      sharpInstance
-        .on("info", (info) => {
-          res.setHeader("content-type", `image/${format}`);
-          res.setHeader("content-length", info.size);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-          res.statusCode = 200;
+        .toFormat(format, { quality: req.params.quality, effort: 0 })
+        .on("info", info => {
+          res.writeHead(200, {
+            "content-type": `image/${format}`,
+            "content-length": info.size,
+            "x-original-size": req.params.originSize,
+            "x-bytes-saved": req.params.originSize - info.size
+          });
         })
-        .on("data", (chunk) => {
+        .on("data", chunk => {
           res.write(chunk);
         })
-        .on('end', () => {
+        .on("end", () => {
           res.end();
         })
-        .on("error", (err) => {
-          redirect(req, res);
-        });
+        .on("error", () => redirect(req, res));
     });
 
   input.pipe(sharpInstance);
@@ -135,7 +128,7 @@ function hhproxy(req, res) {
   };
 
   if (req.headers["via"] === "1.1 bandwidth-hero" &&
-      ["127.0.0.1", "::1"].includes(req.headers["x-forwarded-for"] || req.ip)) {
+    ["127.0.0.1", "::1"].includes(req.headers["x-forwarded-for"] || req.ip)) {
     return redirect(req, res);
   }
 
@@ -143,9 +136,9 @@ function hhproxy(req, res) {
   const options = {
     headers: {
       ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-      "User-Agent": "Bandwidth-Hero Compressor",
+      "User-Agent": USER_AGENT,
       "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
-      Via: "1.1 bandwidth-hero",
+      "Via": "1.1 bandwidth-hero"
     },
     rejectUnauthorized: false
   };
@@ -153,7 +146,7 @@ function hhproxy(req, res) {
   const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = requestModule.request(parsedUrl, options, (originRes) => {
+    let originReq = requestModule.request(parsedUrl, options, originRes => {
       if (originRes.statusCode >= 400 || (originRes.statusCode >= 300 && originRes.headers.location)) {
         originRes.resume();
         return redirect(req, res);
@@ -172,31 +165,25 @@ function hhproxy(req, res) {
         compress(req, res, originRes);
       } else {
         res.setHeader("X-Proxy-Bypass", 1);
-        ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
+        ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
           if (originRes.headers[header]) {
             res.setHeader(header, originRes.headers[header]);
           }
         });
 
-        originRes.on('data', (chunk) => {
-          res.write(chunk);
-        });
-
-        originRes.on('end', () => {
-          res.end();
-        });
+        originRes.pipe(res);
       }
     });
 
-    originReq.on('error', _ => req.socket.destroy());
-
+    originReq.on('error', () => req.socket.destroy());
     originReq.end();
   } catch (err) {
     if (err.code === "ERR_INVALID_URL") {
-      return res.status(400).send("Invalid URL");
+      res.status(400).send("Invalid URL");
+    } else {
+      redirect(req, res);
+      console.error(err);
     }
-    redirect(req, res);
-    console.error(err);
   }
 }
 
