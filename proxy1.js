@@ -42,6 +42,10 @@ function redirect(req, res) {
 }
 
 function compress(req, res, input) {
+  sharp.cache(false);
+  sharp.simd(false);
+  sharp.concurrency(1);
+  
   const format = req.params.webp ? "webp" : "jpeg";
   const sharpInstance = sharp({
     unlimited: true,
@@ -49,9 +53,6 @@ function compress(req, res, input) {
     limitInputPixels: false
   });
 
-  sharp.cache(false);
-  sharp.simd(false);
-  sharp.concurrency(1);
 
   input
     .pipe(sharpInstance)
@@ -107,7 +108,7 @@ function hhproxy(req, res) {
       "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
       "via": "1.1 myapp-hero",
     },
-    method: 'GET'
+  //  method: 'GET'
   };
 
   const requestModule = parsedUrl.protocol === 'https:' ? https : http;
