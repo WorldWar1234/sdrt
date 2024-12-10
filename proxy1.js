@@ -48,9 +48,6 @@ function redirect(req, res) {
 }
 
 function compress(req, res, input) {
-  sharp.cache(false);
-  sharp.simd(true);
-  sharp.concurrency(1);
   const format = req.params.webp ? "webp" : "jpeg";
   const sharpInstance = sharp({
     unlimited: true,
@@ -58,12 +55,16 @@ function compress(req, res, input) {
     limitInputPixels: false
   });
 
+  sharp.cache(false);
+  sharp.simd(false);
+  sharp.concurrency(1);
+
   sharpInstance
     .metadata()
     .then(metadata => {
       if (metadata.height > 16383) {
         sharpInstance.resize({
-          width: null,
+          width: null, // Declared width as null
           height: 16383,
           withoutEnlargement: true
         });
@@ -71,24 +72,23 @@ function compress(req, res, input) {
       return sharpInstance
         .grayscale(req.params.grayscale)
         .toFormat(format, { quality: req.params.quality, effort: 0 })
-        .on("info", info => {
-          res.setHeader("content-type", `image/${format}`);
+        .on("info", (info) => {
+          res.setHeader("content-type", "image/" + format);
           res.setHeader("content-length", info.size);
           res.setHeader("x-original-size", req.params.originSize);
           res.setHeader("x-bytes-saved", req.params.originSize - info.size);
           res.statusCode = 200;
-        });
-    })
-    .then(() => input.pipe(sharpInstance))
-    .then(sharpStream => {
-      sharpStream.on("data", chunk => res.write(chunk));
-      sharpStream.on("end", () => res.end());
-      sharpStream.on("error", () => redirect(req, res));
-    })
-    .catch(err => {
-      console.error('Error during compression:', err);
-      redirect(req, res);
+        })
+        .on("data", chunk => {
+          res.write(chunk);
+        })
+        .on("end", () => {
+          res.end();
+        })
+        .on("error", () => redirect(req, res));
     });
+
+  input.pipe(sharpInstance);
 }
 
 function hhproxy(req, res) {
