@@ -108,7 +108,7 @@ function hhproxy(req, res) {
       "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
       "via": "1.1 myapp-hero",
     },
-  //  method: 'GET'
+    method: 'GET'
   };
 
   const requestModule = parsedUrl.protocol === 'https:' ? https : http;
