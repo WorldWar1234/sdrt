@@ -50,7 +50,7 @@ function redirect(req, res) {
 function compress(req, res, input) {
   sharp.cache(false);
   sharp.simd(true);
-  sharp.concurrency(availableParallelism());
+  sharp.concurrency(1);
   const format = req.params.webp ? "webp" : "jpeg";
   const sharpInstance = sharp({
     unlimited: true,
