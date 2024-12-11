@@ -1,6 +1,6 @@
 "use strict";
 
-
+import { pipeline } from 'stream';
 import http from "http";
 import https from "https";
 import sharp from "sharp";
@@ -57,79 +57,64 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
-  const format = req.params.webp ? "webp" : "jpeg"; // Output format
-  const quality = parseInt(req.params.quality, 10) || 80; // Image quality
-  const grayscale = req.params.grayscale === "true"; // Grayscale toggle
+  // Configure sharp instance
+  sharp.cache(false);
+  sharp.simd(false);
+  sharp.concurrency(1);
 
-  let sharpInstance = sharp();
-  let metadataChecked = false;
+  const format = req.params.webp ? "webp" : "jpeg";
+  const sharpInstance = sharp({
+    unlimited: true,
+    failOn: "none",
+    limitInputPixels: false,
+  });
 
-  sharpInstance.on("info", (info) => {
+  // Helper function to apply transformations
+  const applyTransformations = (instance, grayscale, quality) => {
+    return instance
+      .grayscale(grayscale)
+      .toFormat(format, { quality, effort: 0 });
+  };
+
+  // Helper function to set response headers
+  const setResponseHeaders = (info, originalSize) => {
     res.setHeader("Content-Type", `image/${format}`);
     res.setHeader("Content-Length", info.size);
-    if (req.params.originSize) {
-      const originalSize = parseInt(req.params.originSize, 10);
-      res.setHeader("X-Original-Size", originalSize);
-      res.setHeader("X-Bytes-Saved", originalSize - info.size);
-    }
+    res.setHeader("X-Original-Size", originalSize);
+    res.setHeader("X-Bytes-Saved", originalSize - info.size);
     res.statusCode = 200;
-  });
+  };
 
-  sharpInstance.on("data", (chunk) => {
-    if (!res.write(chunk)) {
-      sharpInstance.pause();
-      res.once("drain", () => sharpInstance.resume());
-    }
-  });
+  // Process image stream and handle metadata
+  pipeline(input, sharpInstance, (err) => {
+    if (err) return redirect(req, res); // Handle stream errors
 
-  sharpInstance.on("end", () => res.end());
-  sharpInstance.on("error", (err) => {
-    console.error("Error processing image:", err);
-    res.status(500).send("Failed to process the image.");
-  });
+    sharpInstance
+      .metadata()
+      .then((metadata) => {
+        if (metadata.height > 16383) {
+          // Resize if height exceeds limit
+          sharpInstance.resize({ height: 16383, withoutEnlargement: true });
+        }
 
-  input.on("data", (chunk) => {
-    if (!metadataChecked) {
-      sharpInstance.write(chunk);
+        applyTransformations(sharpInstance, req.params.grayscale, req.params.quality);
 
-      sharpInstance
-        .metadata()
-        .then((metadata) => {
-          metadataChecked = true;
-
-          if (metadata.height > 1683) {
-            sharpInstance = sharpInstance.resize({
-              height: 1683,
-              width: null,
-              withoutEnlargement: true,
-            });
-          }
-
-          sharpInstance
-            .grayscale(grayscale)
-            .toFormat(format, { quality, effort: 0 })
-            .on("error", (err) => {
-              console.error("Processing error:", err);
-              res.status(500).send("Failed to process the image.");
-            });
-        })
-        .catch((err) => {
-          console.error("Metadata error:", err);
-          res.status(500).send("Failed to retrieve metadata.");
+        sharpInstance.on("info", (info) => {
+          setResponseHeaders(info, req.params.originSize);
         });
-    } else {
-      sharpInstance.write(chunk);
-    }
+
+        // Stream data to the response, handling backpressure
+        sharpInstance.pipe(res, { end: false });
+
+        sharpInstance.on("end", () => res.end()); // Explicitly handle the "end" event
+        sharpInstance.on("error", () => redirect(req, res));
+      })
+      .catch(() => redirect(req, res)); // Handle metadata error
   });
 
-  input.on("end", () => sharpInstance.end());
-  input.on("error", (err) => {
-    console.error("Input stream error:", err);
-    res.status(400).send("Invalid input stream.");
-  });
+  // Handle input stream error
+  input.on("error", () => redirect(req, res));
 }
-
-
 
 
 // 
