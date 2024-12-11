@@ -57,43 +57,40 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
-  sharp.cache(false);
-  sharp.simd(false);
-  sharp.concurrency(1);
-
   const format = req.params.webp ? "webp" : "jpeg";
   const sharpInstance = sharp({
-    unlimited: true,
     failOn: "none",
     limitInputPixels: false,
   });
 
-  // Handle input stream and transformation
+  // Handle input stream chunks
   input.on("data", (chunk) => {
-    // Process each chunk directly with sharp instance
     sharpInstance.write(chunk);
   });
 
   input.on("end", () => {
-    // Extract metadata upfront to handle resizing logic
+    sharpInstance.end();
+
+    // Extract metadata to apply conditional transformations
     sharpInstance
       .metadata()
       .then((metadata) => {
         if (metadata.height > 16383) {
-          // Resize the image if it exceeds the height limit
           sharpInstance.resize({
-            width: null,
             height: 16383,
             withoutEnlargement: true,
           });
         }
 
-        // Apply grayscale and set the output format
+        // Set transformations and output format
         sharpInstance
           .grayscale(req.params.grayscale)
-          .toFormat(format, { quality: req.params.quality, effort: 0 });
+          .toFormat(format, {
+            quality: req.params.quality,
+            effort: 0,
+          });
 
-        // Set response headers when info is available
+        // Configure response headers
         sharpInstance.on("info", (info) => {
           res.setHeader("Content-Type", `image/${format}`);
           res.setHeader("Content-Length", info.size);
@@ -102,7 +99,7 @@ function compress(req, res, input) {
           res.statusCode = 200;
         });
 
-        // Stream the transformed image to the response
+        // Stream processed data to the response
         sharpInstance.on("data", (chunk) => {
           if (!res.write(chunk)) {
             sharpInstance.pause();
@@ -110,18 +107,16 @@ function compress(req, res, input) {
           }
         });
 
-        // End the response when sharp finishes processing
         sharpInstance.on("end", () => res.end());
-
-        // Handle any errors that might occur during processing
         sharpInstance.on("error", () => redirect(req, res));
       })
       .catch(() => redirect(req, res));
   });
 
-  // Handle any errors in the input stream
+  // Handle input stream errors
   input.on("error", () => redirect(req, res));
 }
+
 
 
 
