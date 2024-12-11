@@ -138,11 +138,11 @@ function hhproxy(req, res) {
   if (!url) return res.end("ban");
 
   // Replace the URL pattern
-  url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
+  //url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
 
   // Set request parameters
   req.params = {};
-  req.params.url = url;
+  req.params.url = decodeURIComponent(url);
   req.params.webp = !req.query.jpeg;
   req.params.grayscale = req.query.bw != 0;
   req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
