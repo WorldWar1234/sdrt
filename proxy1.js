@@ -61,7 +61,10 @@ function compress(req, res, input) {
   const quality = parseInt(req.params.quality, 10) || 80; // Image quality
   const grayscale = req.params.grayscale === "true"; // Grayscale toggle
 
-  const sharpInstance = sharp().on("info", (info) => {
+  let sharpInstance = sharp();
+  let metadataChecked = false;
+
+  sharpInstance.on("info", (info) => {
     res.setHeader("Content-Type", `image/${format}`);
     res.setHeader("Content-Length", info.size);
     if (req.params.originSize) {
@@ -85,25 +88,48 @@ function compress(req, res, input) {
     res.status(500).send("Failed to process the image.");
   });
 
-  input.on("data", (chunk) => sharpInstance.write(chunk));
-  input.on("end", async () => {
-    try {
-      const metadata = await sharpInstance.metadata();
-      if (metadata.height > 1683) {
-        sharpInstance.resize({ height: 1683, width: null, withoutEnlargement: true });
-      }
-      sharpInstance.grayscale(grayscale).toFormat(format, { quality, effort: 0 }).end();
-    } catch (err) {
-      console.error("Error fetching metadata:", err);
-      res.status(500).send("Failed to process the image.");
+  input.on("data", (chunk) => {
+    if (!metadataChecked) {
+      sharpInstance.write(chunk);
+
+      sharpInstance
+        .metadata()
+        .then((metadata) => {
+          metadataChecked = true;
+
+          if (metadata.height > 1683) {
+            sharpInstance = sharpInstance.resize({
+              height: 1683,
+              width: null,
+              withoutEnlargement: true,
+            });
+          }
+
+          sharpInstance
+            .grayscale(grayscale)
+            .toFormat(format, { quality, effort: 0 })
+            .on("error", (err) => {
+              console.error("Processing error:", err);
+              res.status(500).send("Failed to process the image.");
+            });
+        })
+        .catch((err) => {
+          console.error("Metadata error:", err);
+          res.status(500).send("Failed to retrieve metadata.");
+        });
+    } else {
+      sharpInstance.write(chunk);
     }
   });
 
+  input.on("end", () => sharpInstance.end());
   input.on("error", (err) => {
-    console.error("Error reading input stream:", err);
+    console.error("Input stream error:", err);
     res.status(400).send("Invalid input stream.");
   });
 }
+
+
 
 
 // 
