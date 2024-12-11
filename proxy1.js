@@ -60,42 +60,74 @@ function compress(req, res, input) {
   sharp.cache(false);
   sharp.simd(false);
   sharp.concurrency(1);
-  
+
   const format = req.params.webp ? "webp" : "jpeg";
   const sharpInstance = sharp({
     unlimited: true,
     failOn: "none",
-    limitInputPixels: false
+    limitInputPixels: false,
   });
 
+  // Handle stream data directly without buffering it all
+  input.on("data", (chunk) => {
+    // Write chunk to sharp instance
+    sharpInstance.write(chunk);
+  });
 
-  input
-    .pipe(sharpInstance)
-    .metadata()
-    .then(metadata => {
-      if (metadata.height > 16383) {
-        sharpInstance.resize({
-          width: null,
-          height: 16383,
-          withoutEnlargement: true
-        });
-      }
-      return sharpInstance
-        .grayscale(req.params.grayscale)
-        .toFormat(format, { quality: req.params.quality, effort: 0 })
-        .on("info", (info) => {
+  input.on("end", () => {
+    // Extract metadata from the buffered stream
+    sharpInstance
+      .metadata()
+      .then((metadata) => {
+        if (metadata.height > 16383) {
+          // Resize the image if it exceeds the height limit
+          sharpInstance.resize({
+            width: null,
+            height: 16383,
+            withoutEnlargement: true,
+          });
+        }
+
+        // Apply transformations and set the output format
+        sharpInstance
+          .grayscale(req.params.grayscale)
+          .toFormat(format, { quality: req.params.quality, effort: 0 });
+
+        // Set response headers once metadata is available
+        sharpInstance.on("info", (info) => {
           res.setHeader("Content-Type", `image/${format}`);
           res.setHeader("Content-Length", info.size);
           res.setHeader("X-Original-Size", req.params.originSize);
           res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
           res.statusCode = 200;
-        })
-        .on("data", chunk => res.write(chunk))
-        .on("end", () => res.end())
-        .on("error", () => redirect(req, res));
-    })
-    .catch(() => redirect(req, res));
+        });
+
+        // Stream the data to the response
+        sharpInstance.on("data", (chunk) => {
+          if (!res.write(chunk)) {
+            sharpInstance.pause();
+            res.once("drain", () => sharpInstance.resume());
+          }
+        });
+
+        // End the response when sharp finishes
+        sharpInstance.on("end", () => res.end());
+
+        // Handle errors
+        sharpInstance.on("error", () => redirect(req, res));
+      })
+      .catch(() => redirect(req, res));
+  });
+
+  // Handle error in input stream
+  input.on("error", () => redirect(req, res));
+
+  // Finish processing by ending the sharp instance
+  input.on("end", () => {
+    sharpInstance.end();
+  });
 }
+
 
 // 
 function hhproxy(req, res) {
