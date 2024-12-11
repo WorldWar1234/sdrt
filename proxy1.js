@@ -57,6 +57,7 @@ function redirect(req, res) {
 
 // Helper: Compress
 function compress(req, res, input) {
+  // Disable sharp optimizations for consistent results
   sharp.cache(false);
   sharp.simd(false);
   sharp.concurrency(1);
@@ -68,51 +69,59 @@ function compress(req, res, input) {
     limitInputPixels: false,
   });
 
-  input.on("data", (chunk) => sharpInstance.write(chunk));
+  let hasErrorOccurred = false;
 
-  input.on("end", () => {
-    sharpInstance
-      .metadata()
-      .then((metadata) => {
-        // Resize the image if height exceeds limit
-        if (metadata.height > 16383) {
-          sharpInstance.resize({ width: null, height: 16383, withoutEnlargement: true });
+  // Set up sharp transformations and metadata handling
+  const handleImageProcessing = async () => {
+    try {
+      const metadata = await sharpInstance.metadata();
+      if (metadata.height > 16383) {
+        sharpInstance.resize({ height: 16383, withoutEnlargement: true });
+      }
+
+      sharpInstance
+        .grayscale(req.params.grayscale)
+        .toFormat(format, { quality: req.params.quality, effort: 0 });
+
+      // Set response headers when metadata is ready
+      sharpInstance.on("info", (info) => {
+        res.setHeader("Content-Type", `image/${format}`);
+        res.setHeader("Content-Length", info.size);
+        res.setHeader("X-Original-Size", req.params.originSize);
+        res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
+        res.statusCode = 200;
+      });
+
+      // Stream data to the response
+      sharpInstance.on("data", (chunk) => {
+        if (!res.write(chunk)) {
+          sharpInstance.pause();
+          res.once("drain", () => sharpInstance.resume());
         }
+      });
 
-        // Apply grayscale if needed and set format/quality
-        sharpInstance
-          .grayscale(req.params.grayscale)
-          .toFormat(format, { quality: req.params.quality, effort: 0 });
+      sharpInstance.on("end", () => res.end());
+      sharpInstance.on("error", handleError);
 
-        // Set response headers once metadata is available
-        sharpInstance.on("info", (info) => {
-          res.setHeader("Content-Type", `image/${format}`);
-          res.setHeader("Content-Length", info.size);
-          res.setHeader("X-Original-Size", req.params.originSize);
-          res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
-          res.statusCode = 200;
-        });
+      sharpInstance.end(); // Finalize sharp processing
+    } catch {
+      handleError();
+    }
+  };
 
-        // Handle streaming data to the response with backpressure handling
-        sharpInstance.on("data", (chunk) => {
-          if (!res.write(chunk)) {
-            sharpInstance.pause();
-            res.once("drain", () => sharpInstance.resume());
-          }
-        });
+  const handleError = () => {
+    if (!hasErrorOccurred) {
+      hasErrorOccurred = true;
+      redirect(req, res); // Redirect on error
+    }
+  };
 
-        // End response when sharp finishes
-        sharpInstance.on("end", () => res.end());
-
-        // Error handling
-        sharpInstance.on("error", () => redirect(req, res));
-      })
-      .catch(() => redirect(req, res));
-  });
-
-  // Handle input stream error
-  input.on("error", () => redirect(req, res));
+  // Input stream handlers
+  input.on("data", (chunk) => sharpInstance.write(chunk));
+  input.on("end", handleImageProcessing);
+  input.on("error", handleError);
 }
+
 
 
 
