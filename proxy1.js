@@ -56,7 +56,7 @@ function redirect(req, res) {
 }
 
 // Helper: Compress
- function compress(req, res, input) {
+  function compress(req, res, input) {
   // Configure sharp instance
   sharp.cache(false);
   sharp.simd(false);
@@ -87,26 +87,23 @@ function redirect(req, res) {
 
   let isProcessing = false;
 
-  // Handle incoming data from the input stream
   input.on("data", (chunk) => {
+    // Ensure we handle the input stream correctly
     if (!isProcessing) {
       isProcessing = true;
-      input.pause(); // Pause the input stream while processing
+      input.pause(); // Pause input while processing
     }
-    sharpInstance.write(chunk); // Pass chunk to sharp instance
+    sharpInstance.write(chunk);
   });
 
-  // Handle the end of the input stream
   input.on("end", () => {
-    sharpInstance.end(); // Signal sharp instance to finish processing
+    sharpInstance.end(); // End the sharp instance once the input is finished
   });
 
-  // Handle input stream errors
   input.on("error", () => {
-    redirect(req, res); // Handle errors by redirecting
+    redirect(req, res); // Handle input stream errors
   });
 
-  // Handle sharp instance metadata
   sharpInstance.on("metadata", (metadata) => {
     if (metadata.height > 16383) {
       // Resize if height exceeds limit
@@ -119,7 +116,7 @@ function redirect(req, res) {
       setResponseHeaders(info, req.params.originSize);
     });
 
-    // Handle data streaming to response while handling backpressure
+    // Stream the image to the response while handling backpressure
     sharpInstance.on("data", (chunk) => {
       if (!res.write(chunk)) {
         sharpInstance.pause();
@@ -127,9 +124,8 @@ function redirect(req, res) {
       }
     });
 
-    // End the response once sharp finishes
     sharpInstance.on("end", () => {
-      res.end(); // Finish the response
+      res.end(); // End the response once processing is done
     });
 
     sharpInstance.on("error", () => {
@@ -139,7 +135,7 @@ function redirect(req, res) {
 
   // Handle sharp errors
   sharpInstance.on("error", () => {
-    redirect(req, res); // Handle errors by redirecting
+    redirect(req, res); // Handle sharp errors
   });
 }
 
