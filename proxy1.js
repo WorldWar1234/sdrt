@@ -161,7 +161,7 @@ async function hhproxy(req, res) {
 const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let origin = await requestModule.request(req.params.url, {
+    let origin = await requestModule.get(req.params.url, {
       headers: {
         ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
         "user-agent": userAgent.toString(),
@@ -171,7 +171,6 @@ const requestModule = parsedUrl.protocol === 'https:' ? https : http;
       maxRedirections: 4
     });
     _onRequestResponse(origin, req, res);
-    origin.end();
   } catch (err) {
     _onRequestError(req, res, err);
   }
