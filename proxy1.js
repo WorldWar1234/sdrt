@@ -132,7 +132,7 @@ function streamToResponse(sharpInstance, res) {
 
 
 // 
-function hhproxy(req, res) {
+async function hhproxy(req, res) {
   // Extract and validate parameters from the request
   let url = req.query.url;
   if (!url) return res.end("ban");
