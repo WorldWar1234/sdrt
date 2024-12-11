@@ -157,67 +157,74 @@ function hhproxy(req, res) {
 
   const parsedUrl = new URL(req.params.url);
   const userAgent = new UserAgent();
-  const options = {
-    headers: {
-      ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-      "user-agent": userAgent.toString(),
-      "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
-      via: "1.1 myapp-hero",
-    },
-    method: 'GET',
-    rejectUnauthorized: false // Disable SSL verification
-  };
 
 const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = requestModule.request(req.params.url, options, (originRes) => {
-      // Handle non-2xx or redirect responses.
-      if (
-        originRes.statusCode >= 400 ||
-        (originRes.statusCode >= 300 && originRes.headers.location)
-      ) {
-        return redirect(req, res);
-      }
-
-      // Set headers and stream response.
-      copyHeaders(originRes, res);
-      res.setHeader("content-encoding", "identity");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-      res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
-      req.params.originType = originRes.headers["content-type"] || "";
-      req.params.originSize = originRes.headers["content-length"] || "0";
-
-      if (shouldCompress(req)) {
-        return compress(req, res, originRes);
-      } else {
-        res.setHeader("x-proxy-bypass", 1);
-        ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
-          if (originRes.headers[header]) {
-            res.setHeader(header, originRes.headers[header]);
-          }
-        });
-
-        // Use res.write for bypass
-        originRes.on('data', (chunk) => {
-          res.write(chunk);
-        });
-
-        originRes.on('end', () => {
-          res.end();
-        });
-      }
+    let origin = await requestModule.request(req.params.url, {
+      headers: {
+        ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
+        "user-agent": userAgent.toString(),
+        "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
+        via: "1.1 bandwidth-hero",
+      },
+      maxRedirections: 4
     });
-
-    originReq.end();
+    _onRequestResponse(origin, req, res);
+    origin.end();
   } catch (err) {
-    if (err.code === 'ERR_INVALID_URL') {
-      return res.statusCode = 400, res.end("Invalid URL");
+    _onRequestError(req, res, err);
+  }
+}
+
+function _onRequestError(req, res, err) {
+  // Ignore invalid URL.
+  if (err.code === "ERR_INVALID_URL") return res.status(400).send("Invalid URL");
+
+  /*
+   * When there's a real error, Redirect then destroy the stream immediately.
+   */
+  redirect(req, res);
+  console.error(err);
+}
+
+function _onRequestResponse(origin, req, res) {
+  if (origin.statusCode >= 400)
+    return redirect(req, res);
+
+  // handle redirects
+  if (origin.statusCode >= 300 && origin.headers.location)
+    return redirect(req, res);
+
+  copyHeaders(origin, res);
+  res.setHeader("content-encoding", "identity");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+  req.params.originType = origin.headers["content-type"] || "";
+  req.params.originSize = origin.headers["content-length"] || "0";
+
+  origin.on('error', _ => req.socket.destroy());
+
+  if (shouldCompress(req)) {
+    /*
+     * sharp support stream. So pipe it.
+     */
+    return compress(req, res, origin);
+  } else {
+    /*
+     * Downloading then uploading the buffer to the client is not a good idea though,
+     * It would better if you pipe the incomming buffer to client directly.
+     */
+
+    res.setHeader("x-proxy-bypass", 1);
+
+    for (const headerName of ["accept-ranges", "content-type", "content-length", "content-range"]) {
+      if (headerName in origin.headers)
+        res.setHeader(headerName, origin.headers[headerName]);
     }
-    console.error(err);
-    redirect(req, res);
-    
+
+    return origin.pipe(res);
   }
 }
 
