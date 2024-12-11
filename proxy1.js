@@ -1,6 +1,6 @@
 "use strict";
 
-import { pipeline } from 'stream';
+//import { pipeline } from 'stream';
 import http from "http";
 import https from "https";
 import sharp from "sharp";
@@ -56,7 +56,7 @@ function redirect(req, res) {
 }
 
 // Helper: Compress
-function compress(req, res, input) {
+ function compress(req, res, input) {
   // Configure sharp instance
   sharp.cache(false);
   sharp.simd(false);
@@ -85,36 +85,64 @@ function compress(req, res, input) {
     res.statusCode = 200;
   };
 
-  // Process image stream and handle metadata
-  pipeline(input, sharpInstance, (err) => {
-    if (err) return redirect(req, res); // Handle stream errors
+  let isProcessing = false;
 
-    sharpInstance
-      .metadata()
-      .then((metadata) => {
-        if (metadata.height > 16383) {
-          // Resize if height exceeds limit
-          sharpInstance.resize({ height: 16383, withoutEnlargement: true });
-        }
-
-        applyTransformations(sharpInstance, req.params.grayscale, req.params.quality);
-
-        sharpInstance.on("info", (info) => {
-          setResponseHeaders(info, req.params.originSize);
-        });
-
-        // Stream data to the response, handling backpressure
-        sharpInstance.pipe(res, { end: false });
-
-        sharpInstance.on("end", () => res.end()); // Explicitly handle the "end" event
-        sharpInstance.on("error", () => redirect(req, res));
-      })
-      .catch(() => redirect(req, res)); // Handle metadata error
+  // Handle incoming data from the input stream
+  input.on("data", (chunk) => {
+    if (!isProcessing) {
+      isProcessing = true;
+      input.pause(); // Pause the input stream while processing
+    }
+    sharpInstance.write(chunk); // Pass chunk to sharp instance
   });
 
-  // Handle input stream error
-  input.on("error", () => redirect(req, res));
+  // Handle the end of the input stream
+  input.on("end", () => {
+    sharpInstance.end(); // Signal sharp instance to finish processing
+  });
+
+  // Handle input stream errors
+  input.on("error", () => {
+    redirect(req, res); // Handle errors by redirecting
+  });
+
+  // Handle sharp instance metadata
+  sharpInstance.on("metadata", (metadata) => {
+    if (metadata.height > 16383) {
+      // Resize if height exceeds limit
+      sharpInstance.resize({ height: 16383, withoutEnlargement: true });
+    }
+
+    applyTransformations(sharpInstance, req.params.grayscale, req.params.quality);
+
+    sharpInstance.on("info", (info) => {
+      setResponseHeaders(info, req.params.originSize);
+    });
+
+    // Handle data streaming to response while handling backpressure
+    sharpInstance.on("data", (chunk) => {
+      if (!res.write(chunk)) {
+        sharpInstance.pause();
+        res.once("drain", () => sharpInstance.resume());
+      }
+    });
+
+    // End the response once sharp finishes
+    sharpInstance.on("end", () => {
+      res.end(); // Finish the response
+    });
+
+    sharpInstance.on("error", () => {
+      redirect(req, res); // Handle sharp errors
+    });
+  });
+
+  // Handle sharp errors
+  sharpInstance.on("error", () => {
+    redirect(req, res); // Handle errors by redirecting
+  });
 }
+
 
 
 // 
