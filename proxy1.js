@@ -85,14 +85,9 @@ function redirect(req, res) {
     res.statusCode = 200;
   };
 
-  let isProcessing = false;
 
   input.on("data", (chunk) => {
     // Ensure we handle the input stream correctly
-    if (!isProcessing) {
-      isProcessing = true;
-      input.pause(); // Pause input while processing
-    }
     sharpInstance.write(chunk);
   });
 
@@ -133,10 +128,6 @@ function redirect(req, res) {
     });
   });
 
-  // Handle sharp errors
-  sharpInstance.on("error", () => {
-    redirect(req, res); // Handle sharp errors
-  });
 }
 
 
