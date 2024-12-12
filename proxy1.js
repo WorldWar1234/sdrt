@@ -1,12 +1,8 @@
 "use strict";
-
-//import { pipeline } from 'stream';
-import http from "http";
 import https from "https";
 import sharp from "sharp";
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
-//const sharpStream = _ => sharp({ animated: false, unlimited: true });
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
@@ -56,9 +52,10 @@ function redirect(req, res) {
 }
 
 // Helper: Compress
+const sharpStream = _ => sharp({ animated: false, unlimited: true});
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg";
-  const sharpInstance = sharp();
+  const sharpInstance = sharpStream();
 
   // Error handling for the input stream
   input.on("error", () => redirect(req, res));
@@ -130,19 +127,12 @@ async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
     res.statusCode = 400;
-    return res.end("Missing 'url' parameter");
+    return res.end("bandwidth-hero-proxy");
   }
 
-  let parsedUrl;
-  try {
-    parsedUrl = decodeURIComponent(url);
-  } catch (err) {
-    res.statusCode = 400;
-    return res.end("Invalid URL");
-  }
 
   req.params = {
-    url: parsedUrl,
+    url: decodeURIComponent(url),
     webp: !req.query.jpeg,
     grayscale: req.query.bw != 0,
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
