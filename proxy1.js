@@ -155,6 +155,7 @@ const userAgent = new UserAgent();
       "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
       Via: "1.1 bandwidth-hero"
     },
+    method: 'GET',
     rejectUnauthorized: false,
     maxRedirects: 4
   };
@@ -162,7 +163,7 @@ const userAgent = new UserAgent();
  // const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = await https.get(req.params.url, options, (originRes) => {
+    let originReq = await https.request(req.params.url, options, (originRes) => {
       _onRequestResponse(originRes, req, res);
     });
 
