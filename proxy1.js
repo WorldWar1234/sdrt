@@ -127,7 +127,7 @@ async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
     res.statusCode = 400;
-    return res.end("bandwidth-hero-proxy");
+    return res.send("bandwidth-hero-proxy");
   }
 
 
