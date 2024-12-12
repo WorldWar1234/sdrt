@@ -167,7 +167,7 @@ function hhproxy(req, res) {
   const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    const originReq = requestModule.request(parsedUrl, options, originRes => {
+    const originReq = requestModule.request(req.params.url, options, originRes => {
       _onRequestResponse(originRes, req, res);
     });
 
