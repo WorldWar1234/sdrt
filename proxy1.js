@@ -126,7 +126,7 @@ function streamToResponse(sharpInstance, res) {
  * @param {http.IncomingMessage} req - The incoming HTTP request.
  * @param {http.ServerResponse} res - The HTTP response.
  */
-function hhproxy(req, res) {
+async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
     res.statusCode = 400;
@@ -162,11 +162,11 @@ const userAgent = new UserAgent();
  // const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = https.request(req.params.url, options, (originRes) => {
+    let originReq = await https.request(req.params.url, options, (originRes) => {
       _onRequestResponse(originRes, req, res);
     });
 
-    //originReq.end();
+    originReq.end();
   } catch (err) {
     _onRequestError(req, res, err);
   }
