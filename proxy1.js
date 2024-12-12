@@ -162,7 +162,7 @@ const userAgent = new UserAgent();
  // const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = await https.request(req.params.url, options, (originRes) => {
+    let originReq = await https.get(req.params.url, options, (originRes) => {
       _onRequestResponse(originRes, req, res);
     });
 
