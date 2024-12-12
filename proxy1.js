@@ -93,9 +93,9 @@ function compress(req, res, input) {
       })
       .catch(() => redirect(req, res));
   });
-}
 
-// Helper to set up response headers
+
+  // Helper to set up response headers
 function setupResponseHeaders(sharpInstance, res, format, originSize) {
   sharpInstance.on("info", (info) => {
     res.setHeader("Content-Type", `image/${format}`);
@@ -118,13 +118,7 @@ function streamToResponse(sharpInstance, res) {
   sharpInstance.on("end", () => res.end());
   sharpInstance.on("error", () => redirect(req, res));
 }
-
-
-
-
-
-
-
+}
 
 // 
 /**
