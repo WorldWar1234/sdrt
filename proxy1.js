@@ -132,6 +132,11 @@ function streamToResponse(sharpInstance, res) {
 
 
 // 
+/**
+ * Main proxy handler for bandwidth optimization.
+ * @param {http.IncomingMessage} req - The incoming HTTP request.
+ * @param {http.ServerResponse} res - The HTTP response.
+ */
 function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
@@ -139,6 +144,7 @@ function hhproxy(req, res) {
     return res.end("Missing 'url' parameter");
   }
 
+  // Validate and parse the URL
   let parsedUrl;
   try {
     parsedUrl = new URL(decodeURIComponent(url));
@@ -154,50 +160,59 @@ function hhproxy(req, res) {
     quality: Math.min(Math.max(parseInt(req.query.l, 10) || DEFAULT_QUALITY, 1), 100)
   };
 
+  // Check for self-referential requests
+  if (req.headers["via"] === "1.1 bandwidth-hero" &&
+    ["127.0.0.1", "::1"].includes(req.headers["x-forwarded-for"] || req.ip)) {
+    return redirect(req, res);
+  }
+
   const options = {
     headers: {
       ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
       "User-Agent": USER_AGENT,
       "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
-      Via: "1.1 bandwidth-hero"
+      "Via": "1.1 bandwidth-hero"
     },
-    maxRedirects: 4
+    rejectUnauthorized: true // Enforce HTTPS validation for security
   };
 
   const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let originReq = requestModule.request(req.params.url, options, originRes => {
-      _onRequestResponse(originRes, req, res);
+    const originReq = requestModule.request(parsedUrl, options, originRes => {
+      if (originRes.statusCode >= 400) {
+        console.error(`Error from origin: ${originRes.statusCode}`);
+        return redirect(req, res);
+      }
+
+      if (originRes.statusCode >= 300 && originRes.headers.location) {
+        console.log("Redirect detected, forwarding...");
+        return redirect(req, res);
+      }
+
+      handleOriginResponse(req, res, originRes);
     });
 
+    originReq.on('error', err => {
+      console.error("Request error:", err.message);
+      res.statusCode = 500;
+      res.end("Internal server error");
+    });
 
     originReq.end();
   } catch (err) {
-    _onRequestError(req, res, err);
+    console.error("Unexpected error:", err.message);
+    redirect(req, res);
   }
 }
 
-function _onRequestError(req, res, err) {
-  if (err.code === "ERR_INVALID_URL") {
-    res.statusCode = 400;
-    return res.end("Invalid URL");
-  }
-
-  redirect(req, res);
-  console.error(err);
-}
-
-function _onRequestResponse(originRes, req, res) {
-  if (originRes.statusCode >= 400) {
-    return redirect(req, res);
-  }
-
-  if (originRes.statusCode >= 300 && originRes.headers.location) {
-    req.params.url = originRes.headers.location;
-    return redirect(req, res); // Follow the redirect manually
-  }
-
+/**
+ * Handles the response from the origin server.
+ * @param {http.IncomingMessage} req - The incoming HTTP request.
+ * @param {http.ServerResponse} res - The HTTP response.
+ * @param {http.IncomingMessage} originRes - The origin server's response.
+ */
+function handleOriginResponse(req, res, originRes) {
   copyHeaders(originRes, res);
 
   res.setHeader("Content-Encoding", "identity");
@@ -212,16 +227,25 @@ function _onRequestResponse(originRes, req, res) {
     compress(req, res, originRes);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
-
-    ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-      if (originRes.headers[header]) {
-        res.setHeader(header, originRes.headers[header]);
-      }
-    });
-
-    originRes.pipe(res);
+    forwardUncompressedResponse(originRes, res);
   }
 }
+
+/**
+ * Forwards the uncompressed response to the client.
+ * @param {http.IncomingMessage} originRes - The origin server's response.
+ * @param {http.ServerResponse} res - The HTTP response.
+ */
+function forwardUncompressedResponse(originRes, res) {
+  ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
+    if (originRes.headers[header]) {
+      res.setHeader(header, originRes.headers[header]);
+    }
+  });
+
+  originRes.pipe(res);
+}
+
 
 
 export default hhproxy;
