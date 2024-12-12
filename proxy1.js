@@ -141,14 +141,14 @@ function hhproxy(req, res) {
 
   let parsedUrl;
   try {
-    parsedUrl = new URL(decodeURIComponent(url));
+    parsedUrl = decodeURIComponent(url);
   } catch (err) {
     res.statusCode = 400;
     return res.end("Invalid URL");
   }
 
   req.params = {
-    url: parsedUrl.href,
+    url: parsedUrl,
     webp: !req.query.jpeg,
     grayscale: req.query.bw != 0,
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
@@ -161,17 +161,18 @@ const userAgent = new UserAgent();
       "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
       Via: "1.1 bandwidth-hero"
     },
+    rejectUnauthorized: false,
     maxRedirects: 4
   };
 
-  const requestModule = parsedUrl.protocol === 'https:' ? https : http;
+ // const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    const originReq = requestModule.request(parsedUrl, options, originRes => {
+    const originReq = https.get(req.params.url, options, (originRes) => {
       _onRequestResponse(originRes, req, res);
     });
 
-    originReq.end();
+    //originReq.end();
   } catch (err) {
     _onRequestError(req, res, err);
   }
@@ -194,7 +195,7 @@ function _onRequestResponse(originRes, req, res) {
 
   if (originRes.statusCode >= 300 && originRes.headers.location) {
     req.params.url = originRes.headers.location;
-    return hhproxy(req, res); // Follow the redirect manually
+    return redirect(req, res); // Follow the redirect manually
   }
 
   copyHeaders(originRes, res);
@@ -206,9 +207,11 @@ function _onRequestResponse(originRes, req, res) {
 
   req.params.originType = originRes.headers["content-type"] || "";
   req.params.originSize = parseInt(originRes.headers["content-length"] || "0", 10);
+ 
+  originRes.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    compress(req, res, originRes);
+    return compress(req, res, originRes);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
@@ -218,7 +221,7 @@ function _onRequestResponse(originRes, req, res) {
       }
     });
 
-    originRes.pipe(res);
+   return originRes.pipe(res);
   }
 }
 
