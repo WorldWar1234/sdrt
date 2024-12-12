@@ -132,99 +132,99 @@ function streamToResponse(sharpInstance, res) {
 
 
 // 
-async function hhproxy(req, res) {
-  // Extract and validate parameters from the request
-  let url = req.query.url;
-  if (!url) return res.end("ban");
-
-  // Replace the URL pattern
-  //url = url.replace(/http:\/\/1\.1\.\d\.\d\/bmi\/(https?:\/\/)?/i, 'http://');
-
-  // Set request parameters
-  req.params = {};
-  req.params.url = decodeURIComponent(url);
-  req.params.webp = !req.query.jpeg;
-  req.params.grayscale = req.query.bw != 0;
-  req.params.quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
-
-  // Avoid loopback that could cause server hang.
-  if (
-    req.headers["via"] === "1.1 myapp-hero" &&
-    ["127.0.0.1", "::1"].includes(req.headers["x-forwarded-for"] || req.ip)
-  ) {
-    return redirect(req, res);
+function hhproxy(req, res) {
+  const url = req.query.url;
+  if (!url) {
+    res.statusCode = 400;
+    return res.end("Missing 'url' parameter");
   }
 
-  const parsedUrl = new URL(req.params.url);
-  const userAgent = new UserAgent();
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(decodeURIComponent(url));
+  } catch (err) {
+    res.statusCode = 400;
+    return res.end("Invalid URL");
+  }
 
-const requestModule = parsedUrl.protocol === 'https:' ? https : http;
+  req.params = {
+    url: parsedUrl.href,
+    webp: !req.query.jpeg,
+    grayscale: req.query.bw != 0,
+    quality: Math.min(Math.max(parseInt(req.query.l, 10) || DEFAULT_QUALITY, 1), 100)
+  };
+
+  const options = {
+    headers: {
+      ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
+      "User-Agent": USER_AGENT,
+      "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
+      Via: "1.1 bandwidth-hero"
+    },
+    maxRedirects: 4
+  };
+
+  const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    let origin = await requestModule.get(req.params.url, {
-      headers: {
-        ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-        "user-agent": userAgent.toString(),
-        "x-forwarded-for": req.headers["x-forwarded-for"] || req.ip,
-        via: "1.1 bandwidth-hero",
-      },
-      maxRedirections: 4
+    const originReq = requestModule.request(parsedUrl, options, originRes => {
+      _onRequestResponse(originRes, req, res);
     });
-    _onRequestResponse(origin, req, res);
+
+    originReq.on('error', err => {
+      _onRequestError(req, res, err);
+    });
+
+    originReq.end();
   } catch (err) {
     _onRequestError(req, res, err);
   }
 }
 
 function _onRequestError(req, res, err) {
-  // Ignore invalid URL.
-  if (err.code === "ERR_INVALID_URL") return res.status(400).send("Invalid URL");
+  if (err.code === "ERR_INVALID_URL") {
+    res.statusCode = 400;
+    return res.end("Invalid URL");
+  }
 
-  /*
-   * When there's a real error, Redirect then destroy the stream immediately.
-   */
   redirect(req, res);
   console.error(err);
 }
 
-function _onRequestResponse(origin, req, res) {
-  if (origin.statusCode >= 400)
+function _onRequestResponse(originRes, req, res) {
+  if (originRes.statusCode >= 400) {
     return redirect(req, res);
+  }
 
-  // handle redirects
-  if (origin.statusCode >= 300 && origin.headers.location)
-    return redirect(req, res);
+  if (originRes.statusCode >= 300 && originRes.headers.location) {
+    req.params.url = originRes.headers.location;
+    return redirect(req, res); // Follow the redirect manually
+  }
 
-  copyHeaders(origin, res);
-  res.setHeader("content-encoding", "identity");
+  copyHeaders(originRes, res);
+
+  res.setHeader("Content-Encoding", "identity");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
-  req.params.originType = origin.headers["content-type"] || "";
-  req.params.originSize = origin.headers["content-length"] || "0";
 
-  origin.on('error', _ => req.socket.destroy());
+  req.params.originType = originRes.headers["content-type"] || "";
+  req.params.originSize = parseInt(originRes.headers["content-length"] || "0", 10);
 
   if (shouldCompress(req)) {
-    /*
-     * sharp support stream. So pipe it.
-     */
-    return compress(req, res, origin);
+    compress(req, res, originRes);
   } else {
-    /*
-     * Downloading then uploading the buffer to the client is not a good idea though,
-     * It would better if you pipe the incomming buffer to client directly.
-     */
+    res.setHeader("X-Proxy-Bypass", 1);
 
-    res.setHeader("x-proxy-bypass", 1);
+    ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
+      if (originRes.headers[header]) {
+        res.setHeader(header, originRes.headers[header]);
+      }
+    });
 
-    for (const headerName of ["accept-ranges", "content-type", "content-length", "content-range"]) {
-      if (headerName in origin.headers)
-        res.setHeader(headerName, origin.headers[headerName]);
-    }
-
-    return origin.pipe(res);
+    originRes.pipe(res);
   }
 }
+
 
 export default hhproxy;
