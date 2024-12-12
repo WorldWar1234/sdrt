@@ -168,7 +168,7 @@ const userAgent = new UserAgent();
  // const requestModule = parsedUrl.protocol === 'https:' ? https : http;
 
   try {
-    const originReq = https.get(req.params.url, options, (originRes) => {
+    let originReq = https.request(req.params.url, options, (originRes) => {
       _onRequestResponse(originRes, req, res);
     });
 
