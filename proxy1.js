@@ -6,7 +6,7 @@ import https from "https";
 import sharp from "sharp";
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
-
+const sharpStream = _ => sharp({ animated: false, unlimited: true });
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
@@ -58,10 +58,7 @@ function redirect(req, res) {
 // Helper: Compress
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg";
-  const sharpInstance = sharp({
-    failOn: "none",
-    limitInputPixels: false,
-  });
+  const sharpInstance = sharpStream();
 
   // Error handling for the input stream
   input.on("error", () => redirect(req, res));
