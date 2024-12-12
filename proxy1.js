@@ -157,7 +157,7 @@ function hhproxy(req, res) {
     url: parsedUrl.href,
     webp: !req.query.jpeg,
     grayscale: req.query.bw != 0,
-    quality: Math.min(Math.max(parseInt(req.query.l, 10) || DEFAULT_QUALITY, 1), 100)
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY;
   };
 
   // Check for self-referential requests
