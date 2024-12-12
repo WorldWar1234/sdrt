@@ -126,7 +126,6 @@ function streamToResponse(sharpInstance, res) {
 async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
-    res.statusCode = 400;
     return res.send("bandwidth-hero-proxy");
   }
 
