@@ -166,10 +166,12 @@ function hhproxy(req, res) {
     return redirect(req, res);
   }
 
+const userAgent = new UserAgent();
+
   const options = {
     headers: {
       ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-      "User-Agent": USER_AGENT,
+      "User-Agent": userAgent.toString(),
       "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
       "Via": "1.1 bandwidth-hero"
     },
