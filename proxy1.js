@@ -1,5 +1,6 @@
 "use strict";
-import { request } from 'undici';
+//import { request } from 'undici';
+import https from "https";
 import sharp from "sharp";
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
@@ -145,7 +146,7 @@ async function hhproxy(req, res) {
   };
 
   try {
-    let origin = await request(req.params.url, options);
+    let origin = await https.get(req.params.url, options);
     _onRequestResponse(origin, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
@@ -182,10 +183,10 @@ function _onRequestResponse(origin, req, res) {
   req.params.originType = origin.headers["content-type"] || "";
   req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
 
-  origin.body.on('error', _ => req.socket.destroy());
+  origin.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin.body);
+    return compress(req, res, origin);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
@@ -195,7 +196,7 @@ function _onRequestResponse(origin, req, res) {
       }
     });
 
-    return origin.body.pipe(res);
+    return origin.pipe(res);
   }
 }
 
