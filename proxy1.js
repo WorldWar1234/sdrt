@@ -1,8 +1,9 @@
 "use strict";
-import https from "https";
+import { request } from 'undici';
 import sharp from "sharp";
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
+
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
@@ -91,44 +92,37 @@ function compress(req, res, input) {
       .catch(() => redirect(req, res));
   });
 
-
   // Helper to set up response headers
-function setupResponseHeaders(sharpInstance, res, format, originSize) {
-  sharpInstance.on("info", (info) => {
-    res.setHeader("Content-Type", `image/${format}`);
-    res.setHeader("Content-Length", info.size);
-    res.setHeader("X-Original-Size", originSize);
-    res.setHeader("X-Bytes-Saved", originSize - info.size);
-    res.statusCode = 200;
-  });
+  function setupResponseHeaders(sharpInstance, res, format, originSize) {
+    sharpInstance.on("info", (info) => {
+      res.setHeader("Content-Type", `image/${format}`);
+      res.setHeader("Content-Length", info.size);
+      res.setHeader("X-Original-Size", originSize);
+      res.setHeader("X-Bytes-Saved", originSize - info.size);
+      res.statusCode = 200;
+    });
+  }
+
+  // Helper to handle streaming data to the response
+  function streamToResponse(sharpInstance, res) {
+    sharpInstance.on("data", (chunk) => {
+      if (!res.write(chunk)) {
+        sharpInstance.pause();
+        res.once("drain", () => sharpInstance.resume());
+      }
+    });
+
+    sharpInstance.on("end", () => res.end());
+    sharpInstance.on("error", () => redirect(req, res));
+  }
 }
 
-// Helper to handle streaming data to the response
-function streamToResponse(sharpInstance, res) {
-  sharpInstance.on("data", (chunk) => {
-    if (!res.write(chunk)) {
-      sharpInstance.pause();
-      res.once("drain", () => sharpInstance.resume());
-    }
-  });
-
-  sharpInstance.on("end", () => res.end());
-  sharpInstance.on("error", () => redirect(req, res));
-}
-}
-
-// 
-/**
- * Main proxy handler for bandwidth optimization.
- * @param {http.IncomingMessage} req - The incoming HTTP request.
- * @param {http.ServerResponse} res - The HTTP response.
- */
+// Main proxy handler for bandwidth optimization.
 async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.end("bandwidth-hero-proxy");
   }
-
 
   req.params = {
     url: decodeURIComponent(url),
@@ -136,7 +130,8 @@ async function hhproxy(req, res) {
     grayscale: req.query.bw != 0,
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
   };
-const userAgent = new UserAgent();
+
+  const userAgent = new UserAgent();
   const options = {
     headers: {
       ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
@@ -149,14 +144,9 @@ const userAgent = new UserAgent();
     maxRedirects: 4
   };
 
- // const requestModule = parsedUrl.protocol === 'https:' ? https : http;
-
   try {
-    let originReq = await https.request(req.params.url, options, (originRes) => {
-      _onRequestResponse(originRes, req, res);
-    });
-
-    originReq.end();
+    let origin = await request(req.params.url, options);
+    _onRequestResponse(origin, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
   }
@@ -172,44 +162,41 @@ function _onRequestError(req, res, err) {
   console.error(err);
 }
 
-function _onRequestResponse(originRes, req, res) {
-  if (originRes.statusCode >= 400) {
+function _onRequestResponse(origin, req, res) {
+  if (origin.statusCode >= 400) {
     return redirect(req, res);
   }
 
-  if (originRes.statusCode >= 300 && originRes.headers.location) {
-    req.params.url = originRes.headers.location;
+  if (origin.statusCode >= 300 && origin.headers.location) {
+    req.params.url = origin.headers.location;
     return redirect(req, res); // Follow the redirect manually
   }
 
-  copyHeaders(originRes, res);
+  copyHeaders(origin, res);
 
   res.setHeader("Content-Encoding", "identity");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
 
-  req.params.originType = originRes.headers["content-type"] || "";
-  req.params.originSize = parseInt(originRes.headers["content-length"] || "0", 10);
- 
-  originRes.on('error', _ => req.socket.destroy());
+  req.params.originType = origin.headers["content-type"] || "";
+  req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
+
+  origin.body.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, originRes);
+    return compress(req, res, origin.body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
     ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-      if (originRes.headers[header]) {
-        res.setHeader(header, originRes.headers[header]);
+      if (origin.headers[header]) {
+        res.setHeader(header, origin.headers[header]);
       }
     });
 
-   return originRes.pipe(res);
+    return origin.body.pipe(res);
   }
 }
-
-
-
 
 export default hhproxy;
