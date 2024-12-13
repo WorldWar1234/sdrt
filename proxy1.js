@@ -1,5 +1,5 @@
 "use strict";
-import { dispatch } from 'undici';
+import { Dispatcher } from 'undici';
 import sharp from "sharp";
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
@@ -144,9 +144,17 @@ async function hhproxy(req, res) {
     maxRedirects: 4
   };
 
+  const dispatcher = new Dispatcher({
+    connections: 100,
+    pipelining: 10,
+  });
+
   try {
-    let origin = await dispatch(req.params.url, options);
-    _onRequestResponse(origin, req, res);
+    let response = await dispatcher.request({
+      origin: req.params.url,
+      ...options,
+    });
+    _onRequestResponse(response, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
   }
@@ -162,40 +170,39 @@ function _onRequestError(req, res, err) {
   console.error(err);
 }
 
-function _onRequestResponse(origin, req, res) {
-  if (origin.statusCode >= 400) {
+function _onRequestResponse(response, req, res) {
+  if (response.statusCode >= 400) {
     return redirect(req, res);
   }
 
-  if (origin.statusCode >= 300 && origin.headers.location) {
-    req.params.url = origin.headers.location;
+  if (response.statusCode >= 300 && response.headers.location) {
     return redirect(req, res); // Follow the redirect manually
   }
 
-  copyHeaders(origin, res);
+  copyHeaders(response, res);
 
   res.setHeader("Content-Encoding", "identity");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
 
-  req.params.originType = origin.headers["content-type"] || "";
-  req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
+  req.params.originType = response.headers["content-type"] || "";
+  req.params.originSize = parseInt(response.headers["content-length"] || "0", 10);
 
-  origin.body.on('error', _ => req.socket.destroy());
+  response.body.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin.body);
+    return compress(req, res, response.body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
     ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-      if (origin.headers[header]) {
-        res.setHeader(header, origin.headers[header]);
+      if (response.headers[header]) {
+        res.setHeader(header, response.headers[header]);
       }
     });
 
-    return origin.body.pipe(res);
+    return response.body.pipe(res);
   }
 }
 
