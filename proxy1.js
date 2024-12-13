@@ -182,10 +182,10 @@ function _onRequestResponse(origin, req, res) {
   req.params.originType = origin.headers["content-type"] || "";
   req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
 
-  origin.on('error', _ => req.socket.destroy());
+  origin.body.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin);
+    return compress(req, res, origin.body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
@@ -195,7 +195,7 @@ function _onRequestResponse(origin, req, res) {
       }
     });
 
-    return origin.pipe(res);
+    return origin.body.pipe(res);
   }
 }
 
