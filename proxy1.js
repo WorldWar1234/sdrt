@@ -118,9 +118,6 @@ function compress(req, res, input) {
 }
 
 // Main proxy handler for bandwidth optimization.
-import { Dispatcher } from 'undici';
-
-// Main proxy handler for bandwidth optimization
 async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
@@ -131,34 +128,27 @@ async function hhproxy(req, res) {
     url: decodeURIComponent(url),
     webp: !req.query.jpeg,
     grayscale: req.query.bw != 0,
-    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
   };
 
-  const dispatcher = new Dispatcher({
-    // Custom dispatcher options for optimization
-    keepAliveTimeout: 60 * 1000, // Keep connections alive for 60 seconds
-    keepAliveMaxTimeout: 90 * 1000, // Max keep-alive timeout
-    pipelining: 1, // Max number of requests to pipeline
-  });
-
-  const requestOptions = {
-    method: 'GET',
+  const userAgent = new UserAgent();
+  const options = {
     headers: {
       ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-      'User-Agent': new UserAgent().toString(),
-      'X-Forwarded-For': req.headers['x-forwarded-for'] || req.ip,
-      Via: '1.1 bandwidth-hero',
+      "User-Agent": userAgent.toString(),
+      "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
+      Via: "1.1 bandwidth-hero"
     },
-    maxRedirections: 4,
+    method: 'GET',
+    rejectUnauthorized: false,
+    maxRedirects: 4
   };
 
   try {
-    const origin = await dispatcher.request(req.params.url, requestOptions);
+    let origin = await request(req.params.url, options);
     _onRequestResponse(origin, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
-  } finally {
-    dispatcher.close(); // Ensure dispatcher is closed
   }
 }
 
@@ -189,8 +179,10 @@ function _onRequestResponse(origin, req, res) {
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
 
-  req.params.originType = origin.headers['content-type'] || "";
-  req.params.originSize = parseInt(origin.headers['content-length'] || "0", 10);
+  req.params.originType = origin.headers["content-type"] || "";
+  req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
+
+  origin.body.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
     return compress(req, res, origin.body);
@@ -203,9 +195,8 @@ function _onRequestResponse(origin, req, res) {
       }
     });
 
-    origin.body.pipe(res);
+    return origin.body.pipe(res);
   }
 }
-
 
 export default hhproxy;
