@@ -1,5 +1,5 @@
 "use strict";
-import { stream } from 'undici';
+import { request } from 'undici';
 import sharp from "sharp";
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
@@ -145,7 +145,7 @@ async function hhproxy(req, res) {
   };
 
   try {
-    let origin = await stream(req.params.url, options);
+    let origin = await request(req.params.url, options);
     _onRequestResponse(origin, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
