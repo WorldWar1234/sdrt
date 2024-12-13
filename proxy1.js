@@ -1,5 +1,5 @@
 "use strict";
-import { Dispatcher } from 'undici';
+import { request } from 'undici';
 import sharp from "sharp";
 import pick from "./pick.js";
 import UserAgent from 'user-agents';
@@ -118,6 +118,9 @@ function compress(req, res, input) {
 }
 
 // Main proxy handler for bandwidth optimization.
+import { Dispatcher } from 'undici';
+
+// Main proxy handler for bandwidth optimization
 async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
@@ -128,35 +131,34 @@ async function hhproxy(req, res) {
     url: decodeURIComponent(url),
     webp: !req.query.jpeg,
     grayscale: req.query.bw != 0,
-    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
-  };
-
-  const userAgent = new UserAgent();
-  const options = {
-    headers: {
-      ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-      "User-Agent": userAgent.toString(),
-      "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
-      Via: "1.1 bandwidth-hero"
-    },
-    method: 'GET',
-    rejectUnauthorized: false,
-    maxRedirects: 4
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
   const dispatcher = new Dispatcher({
-    connections: 100,
-    pipelining: 10,
+    // Custom dispatcher options for optimization
+    keepAliveTimeout: 60 * 1000, // Keep connections alive for 60 seconds
+    keepAliveMaxTimeout: 90 * 1000, // Max keep-alive timeout
+    pipelining: 1, // Max number of requests to pipeline
   });
 
+  const requestOptions = {
+    method: 'GET',
+    headers: {
+      ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
+      'User-Agent': new UserAgent().toString(),
+      'X-Forwarded-For': req.headers['x-forwarded-for'] || req.ip,
+      Via: '1.1 bandwidth-hero',
+    },
+    maxRedirections: 4,
+  };
+
   try {
-    let response = await dispatcher.request({
-      origin: req.params.url,
-      ...options,
-    });
-    _onRequestResponse(response, req, res);
+    const origin = await dispatcher.request(req.params.url, requestOptions);
+    _onRequestResponse(origin, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
+  } finally {
+    dispatcher.close(); // Ensure dispatcher is closed
   }
 }
 
@@ -170,40 +172,40 @@ function _onRequestError(req, res, err) {
   console.error(err);
 }
 
-function _onRequestResponse(response, req, res) {
-  if (response.statusCode >= 400) {
+function _onRequestResponse(origin, req, res) {
+  if (origin.statusCode >= 400) {
     return redirect(req, res);
   }
 
-  if (response.statusCode >= 300 && response.headers.location) {
+  if (origin.statusCode >= 300 && origin.headers.location) {
+    req.params.url = origin.headers.location;
     return redirect(req, res); // Follow the redirect manually
   }
 
-  copyHeaders(response, res);
+  copyHeaders(origin, res);
 
   res.setHeader("Content-Encoding", "identity");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
 
-  req.params.originType = response.headers["content-type"] || "";
-  req.params.originSize = parseInt(response.headers["content-length"] || "0", 10);
-
-  response.body.on('error', _ => req.socket.destroy());
+  req.params.originType = origin.headers['content-type'] || "";
+  req.params.originSize = parseInt(origin.headers['content-length'] || "0", 10);
 
   if (shouldCompress(req)) {
-    return compress(req, res, response.body);
+    return compress(req, res, origin.body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
     ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-      if (response.headers[header]) {
-        res.setHeader(header, response.headers[header]);
+      if (origin.headers[header]) {
+        res.setHeader(header, origin.headers[header]);
       }
     });
 
-    return response.body.pipe(res);
+    origin.body.pipe(res);
   }
 }
+
 
 export default hhproxy;
