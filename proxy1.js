@@ -147,7 +147,7 @@ async function hhproxy(req, res) {
   try {
     let origin = await request(req.params.url, options);
 
-    origin.on('response', (originResponse) => {
+    origin.body.on('response', (originResponse) => {
       
     if (originResponse.statusCode >= 400)
     return redirect(req, res);
