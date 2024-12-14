@@ -53,7 +53,7 @@ function redirect(req, res) {
 }
 
 // Helper: Compress
-const sharpStream = _ => sharp({ animated: false, unlimited: true});
+const sharpStream = _ => sharp({ animated: false, unlimited: false});
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg";
   const sharpInstance = sharpStream();
