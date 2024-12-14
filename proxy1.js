@@ -146,57 +146,54 @@ async function hhproxy(req, res) {
 
   try {
     let origin = await request(req.params.url, options);
-    _onRequestResponse(origin, req, res);
-  } catch (err) {
-    _onRequestError(req, res, err);
-  }
-}
 
-function _onRequestError(req, res, err) {
-  if (err.code === "ERR_INVALID_URL") {
-    res.statusCode = 400;
-    return res.end("Invalid URL");
-  }
-
-  redirect(req, res);
-  console.error(err);
-}
-
-function _onRequestResponse(origin, req, res) {
-  if (origin.statusCode >= 400) {
+    origin.on('response', (originResponse) => {
+      
+    if (originResponse.statusCode >= 400)
     return redirect(req, res);
-  }
 
-  if (origin.statusCode >= 300 && origin.headers.location) {
-    req.params.url = origin.headers.location;
-    return redirect(req, res); // Follow the redirect manually
-  }
+  // handle redirects
+  if (originResponse.statusCode >= 300 && originResponse.headers.location)
+    return redirect(req, res);
 
-  copyHeaders(origin, res);
+      // Copy headers to response
+      copyHeaders(originResponse, res);
+      res.setHeader("content-encoding", "identity");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+      req.params.originType = originResponse.headers["content-type"] || "";
+      req.params.originSize = originResponse.headers["content-length"] || "0";
 
-  res.setHeader("Content-Encoding", "identity");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-  res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+      // Handle streaming response
+      origin.body.on('error', () => req.socket.destroy());
 
-  req.params.originType = origin.headers["content-type"] || "";
-  req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
+      if (shouldCompress(req)) {
+        // Compress and pipe response if required
+        return compress(req, res, origin.body);
+      } else {
+        // Bypass compression
+        res.setHeader("x-proxy-bypass", 1);
 
-  origin.body.on('error', _ => req.socket.destroy());
+        // Set specific headers
+        for (const headerName of ["accept-ranges", "content-type", "content-length", "content-range"]) {
+          if (headerName in originResponse.headers) res.setHeader(headerName, originResponse.headers[headerName]);
+        }
 
-  if (shouldCompress(req)) {
-    return compress(req, res, origin.body);
-  } else {
-    res.setHeader("X-Proxy-Bypass", 1);
-
-    ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-      if (origin.headers[header]) {
-        res.setHeader(header, origin.headers[header]);
+        return origin.body.pipe(res);
       }
     });
+  } catch (err) {
+    // Handle error directly
+    if (err.code === "ERR_INVALID_URL") {
+      return res.status(400).send("Invalid URL");
+    }
 
-    return origin.body.pipe(res);
+    // Redirect on other errors
+    redirect(req, res);
+    console.error(err);
   }
 }
+              
 
 export default hhproxy;
