@@ -145,11 +145,8 @@ async function hhproxy(req, res) {
   };
 
   try {
-    let originReq = await request(req.params.url, options, (originRes) => {
-      _onRequestResponse(originRes, req, res);
-    });
-
-  //  originReq.end();
+    let origin = await request(req.params.url, options);
+    _onRequestResponse(origin, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
   }
@@ -165,41 +162,41 @@ function _onRequestError(req, res, err) {
   console.error(err);
 }
 
-function _onRequestResponse(originRes, req, res) {
-  if (originRes.statusCode >= 400) {
+function _onRequestResponse(origin, req, res) {
+  if (origin.statusCode >= 400) {
     return redirect(req, res);
   }
 
-  if (originRes.statusCode >= 300 && originRes.headers.location) {
-    req.params.url = originRes.headers.location;
+  if (origin.statusCode >= 300 && origin.headers.location) {
+    req.params.url = origin.headers.location;
     return redirect(req, res); // Follow the redirect manually
   }
 
-  copyHeaders(originRes, res);
+  copyHeaders(origin, res);
 
   res.setHeader("Content-Encoding", "identity");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
 
-  req.params.originType = originRes.headers["content-type"] || "";
-  req.params.originSize = parseInt(originRes.headers["content-length"] || "0", 10);
- 
-  originRes.on('error', _ => req.socket.destroy());
+  req.params.originType = origin.headers["content-type"] || "";
+  req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
+
+  origin.body.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, originRes);
+    return compress(req, res, origin.body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
     ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-      if (originRes.headers[header]) {
-        res.setHeader(header, originRes.headers[header]);
+      if (origin.headers[header]) {
+        res.setHeader(header, origin.headers[header]);
       }
     });
 
-   return originRes.pipe(res);
-    }
+    return origin.body.pipe(res);
+  }
 }
 
 export default hhproxy;
