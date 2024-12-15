@@ -57,7 +57,7 @@ function compress(req, res, input) {
   const format = 'webp';
   sharp.cache(false);
   sharp.concurrency(0);
-    const image = sharp(input);
+    const image = sharp(input.body);
 
     image.metadata((err, metadata) => {
         if (err) {
@@ -166,7 +166,7 @@ function _onRequestResponse(origin, req, res) {
   origin.body.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin.body);
+    return compress(req, res, origin);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
