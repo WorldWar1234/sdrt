@@ -166,7 +166,7 @@ function _onRequestResponse(origin, req, res) {
   origin.body.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin.body);
+    return compress(req, res, origin);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
