@@ -1,14 +1,14 @@
 "use strict";
 import { request } from 'undici';
 import sharp from "sharp";
-import pick from "./pick.js";
+//import pick from "./pick.js";
 import UserAgent from 'user-agents';
 
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
-/*function pick(obj, keys) {
+function pick(obj, keys) {
   const result = {};
   keys.forEach((key) => {
     if (obj[key]) {
@@ -16,7 +16,7 @@ const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
     }
   });
   return result;
-}*/
+}
 
 // Helper: Should compress
 function shouldCompress(req) {
