@@ -1,14 +1,14 @@
 "use strict";
 import { request } from 'undici';
 import sharp from "sharp";
-//import pick from "./pick.js";
+import pick from "./pick.js";
 import UserAgent from 'user-agents';
 
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
-function pick(obj, keys) {
+/*function pick(obj, keys) {
   const result = {};
   keys.forEach((key) => {
     if (obj[key]) {
@@ -16,7 +16,7 @@ function pick(obj, keys) {
     }
   });
   return result;
-}
+}*/
 
 // Helper: Should compress
 function shouldCompress(req) {
@@ -38,11 +38,16 @@ function shouldCompress(req) {
 }
 
 // Helper: Copy headers
-function copyHeaders(originRes, res) {
-  Object.keys(originRes.headers).forEach((header) => {
-    res.setHeader(header, originRes.headers[header]);
-  });
+function copyHeaders(sourceHeaders, target) {
+  for (const [key, value] of Object.entries(sourceHeaders)) {
+    try {
+      target.setHeader(key, value);
+    } catch (e) {
+      console.log(e.message);
+    }
+  }
 }
+
 
 // Helper: Redirect
 function redirect(req, res) {
