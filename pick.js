@@ -1,16 +1,16 @@
-module.exports = (obj, keys) => {
-	const new_obj = {};
+export default (obj, keys) => {
+  const newObj = {};
 
-	if(!obj)	obj={};
-	if( ! Array.isArray(keys) ){
-		keys = [keys];	// convert to array
-	}
+  if (!obj) obj = {};
+  if (!Array.isArray(keys)) {
+    keys = [keys]; // convert to array
+  }
 
-	for (const key in obj) {
-		if (Object.hasOwnProperty.call(obj, key) && keys.includes(key)) {
-			new_obj[key] = obj[key];
-		}
-	}
+  for (const key in obj) {
+    if (Object.hasOwnProperty.call(obj, key) && keys.includes(key)) {
+      newObj[key] = obj[key];
+    }
+  }
 
-	return new_obj;
+  return newObj;
 };
