@@ -1,7 +1,7 @@
 "use strict";
 import { request } from 'undici';
 import sharp from "sharp";
-import pick from "./pick.js";
+//import pick from "./pick.js";
 import UserAgent from 'user-agents';
 
 const DEFAULT_QUALITY = 40;
