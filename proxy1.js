@@ -89,30 +89,6 @@ function compress(req, res, input) {
 }
 
 // Main proxy handler for bandwidth optimization.
-async function hhproxy(req, res) {
-  const url = req.query.url;
-  if (!url) {
-    return res.end("bandwidth-hero-proxy");
-  }
-
-  req.params = {
-    url: decodeURIComponent(url),
-    webp: !req.query.jpeg,
-    grayscale: req.query.bw != 0,
-    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
-  };
-
-  const userAgent = new UserAgent();
-  const options = {
-    headers: {
-      ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-      "User-Agent": userAgent.toString(),
-      "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
-      Via: "1.1 bandwidth-hero"
-    },
-    maxRedirects: 4
-  };
-
   async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
@@ -138,36 +114,7 @@ async function hhproxy(req, res) {
     rejectUnauthorized: false,
     maxRedirects: 4
   };
-
-  try {
-  async function hhproxy(req, res) {
-  const url = req.query.url;
-  if (!url) {
-    return res.end("bandwidth-hero-proxy");
-  }
-
-
-  req.params = {
-    url: decodeURIComponent(url),
-    webp: !req.query.jpeg,
-    grayscale: req.query.bw != 0,
-    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
-  };
-const userAgent = new UserAgent();
-  const options = {
-    headers: {
-      ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
-      "User-Agent": userAgent.toString(),
-      "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
-      Via: "1.1 bandwidth-hero"
-    },
-    method: 'GET',
-    rejectUnauthorized: false,
-    maxRedirects: 4
-  };
-
-
-
+    
   try {
     let origin = await request(req.params.url, options);
     _onRequestResponse(origin, req, res);
