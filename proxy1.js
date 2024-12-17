@@ -8,6 +8,16 @@ const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
+function pick(obj, keys) {
+  const result = {};
+  keys.forEach((key) => {
+    if (obj[key]) {
+      result[key] = obj[key];
+    }
+  });
+  return result;
+}
+
 // Helper: Should compress
 function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
@@ -28,14 +38,10 @@ function shouldCompress(req) {
 }
 
 // Helper: Copy headers
-function copyHeaders(source, target) {
-  for (const [key, value] of Object.entries(source.headers)) {
-    try {
-      target.setHeader(key, value);
-    } catch (e) {
-      console.log(e.message);
-    }
-  }
+function copyHeaders(originRes, res) {
+  Object.keys(originRes.headers).forEach((header) => {
+    res.setHeader(header, originRes.headers[header]);
+  });
 }
 
 // Helper: Redirect
