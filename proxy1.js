@@ -38,12 +38,12 @@ function shouldCompress(req) {
 }
 
 // Helper: Copy headers
-function copyHeaders(sourceHeaders, target) {
-  for (const [key, value] of Object.entries(sourceHeaders)) {
+function copyHeaders(source, target) {
+  for (const [key, value] of Object.entries(source.headers)) {
     try {
-      target.setHeader(key, value);
+      target.setHeader(key, value)
     } catch (e) {
-      console.log(e.message);
+      console.log(e.message)
     }
   }
 }
