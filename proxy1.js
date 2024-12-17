@@ -113,20 +113,64 @@ async function hhproxy(req, res) {
     maxRedirects: 4
   };
 
+  async function hhproxy(req, res) {
+  const url = req.query.url;
+  if (!url) {
+    return res.end("bandwidth-hero-proxy");
+  }
+
+  req.params = {
+    url: decodeURIComponent(url),
+    webp: !req.query.jpeg,
+    grayscale: req.query.bw != 0,
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
+  };
+
+  const userAgent = new UserAgent();
+  const options = {
+    headers: {
+      ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
+      "User-Agent": userAgent.toString(),
+      "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
+      Via: "1.1 bandwidth-hero"
+    },
+    method: 'GET',
+    rejectUnauthorized: false,
+    maxRedirects: 4
+  };
+
   try {
-    const { statusCode, headers, body } = await request(req.params.url, options);
+  async function hhproxy(req, res) {
+  const url = req.query.url;
+  if (!url) {
+    return res.end("bandwidth-hero-proxy");
+  }
 
-    const originRes = {
-      statusCode: statusCode,
-      headers: headers,
-      on: (event, callback) => {
-        if (event === 'error') {
-          body.on('error', callback);
-        }
-      }
-    };
 
-    _onRequestResponse(originRes, req, res, body);
+  req.params = {
+    url: decodeURIComponent(url),
+    webp: !req.query.jpeg,
+    grayscale: req.query.bw != 0,
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
+  };
+const userAgent = new UserAgent();
+  const options = {
+    headers: {
+      ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
+      "User-Agent": userAgent.toString(),
+      "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
+      Via: "1.1 bandwidth-hero"
+    },
+    method: 'GET',
+    rejectUnauthorized: false,
+    maxRedirects: 4
+  };
+
+
+
+  try {
+    let origin = await request(req.params.url, options);
+    _onRequestResponse(origin, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
   }
@@ -142,38 +186,40 @@ function _onRequestError(req, res, err) {
   console.error(err);
 }
 
-function _onRequestResponse(originRes, req, res, body) {
-  if (originRes.statusCode >= 400) {
+function _onRequestResponse(origin, req, res) {
+  if (origin.statusCode >= 400) {
     return redirect(req, res);
   }
 
-  if (originRes.statusCode >= 300 && originRes.headers.location) {
-    req.params.url = originRes.headers.location;
+  if (origin.statusCode >= 300 && origin.headers.location) {
+    req.params.url = origin.headers.location;
     return redirect(req, res); // Follow the redirect manually
   }
 
-  copyHeaders(originRes, res);
+  copyHeaders(origin, res);
 
   res.setHeader("Content-Encoding", "identity");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
 
-  req.params.originType = originRes.headers["content-type"] || "";
-  req.params.originSize = parseInt(originRes.headers["content-length"] || "0", 10);
+  req.params.originType = origin.headers["content-type"] || "";
+  req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
+
+  origin.body.on('error', _ => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, body);
+    return compress(req, res, origin.body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
     ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-      if (originRes.headers[header]) {
-        res.setHeader(header, originRes.headers[header]);
+      if (origin.headers[header]) {
+        res.setHeader(header, origin.headers[header]);
       }
     });
 
-    return body.pipe(res);
+    return origin.body.pipe(res);
   }
 }
 
