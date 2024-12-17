@@ -114,8 +114,19 @@ async function hhproxy(req, res) {
   };
 
   try {
-    let origin = await request(req.params.url, options);
-    _onRequestResponse(origin, req, res);
+    const { statusCode, headers, body } = await request(req.params.url, options);
+
+    const originRes = {
+      statusCode: statusCode,
+      headers: headers,
+      on: (event, callback) => {
+        if (event === 'error') {
+          body.on('error', callback);
+        }
+      }
+    };
+
+    _onRequestResponse(originRes, req, res, body);
   } catch (err) {
     _onRequestError(req, res, err);
   }
@@ -131,40 +142,38 @@ function _onRequestError(req, res, err) {
   console.error(err);
 }
 
-function _onRequestResponse(origin, req, res) {
-  if (origin.statusCode >= 400) {
+function _onRequestResponse(originRes, req, res, body) {
+  if (originRes.statusCode >= 400) {
     return redirect(req, res);
   }
 
-  if (origin.statusCode >= 300 && origin.headers.location) {
-    req.params.url = origin.headers.location;
+  if (originRes.statusCode >= 300 && originRes.headers.location) {
+    req.params.url = originRes.headers.location;
     return redirect(req, res); // Follow the redirect manually
   }
 
-  copyHeaders(origin, res);
+  copyHeaders(originRes, res);
 
   res.setHeader("Content-Encoding", "identity");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
 
-  req.params.originType = origin.headers["content-type"] || "";
-  req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
-
-  origin.body.on('error', _ => req.socket.destroy());
+  req.params.originType = originRes.headers["content-type"] || "";
+  req.params.originSize = parseInt(originRes.headers["content-length"] || "0", 10);
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin.body);
+    return compress(req, res, body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
     ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-      if (origin.headers[header]) {
-        res.setHeader(header, origin.headers[header]);
+      if (originRes.headers[header]) {
+        res.setHeader(header, originRes.headers[header]);
       }
     });
 
-    return origin.body.pipe(res);
+    return body.pipe(res);
   }
 }
 
