@@ -57,17 +57,14 @@ function redirect(req, res) {
   res.statusCode = 302;
   res.end();
 }
+const sharpStream = _ => sharp({ animated: false, unlimited: true });
 
 function compress(req, res, input) {
   const format = "webp";
   sharp.cache(false);
   sharp.simd(false);
   sharp.concurrency(1);
-  const transform = sharp({
-    unlimited: true,
-    failOn: "none",
-    limitInputPixels: false
-  });
+  const transform = sharpStream();
 
   // Pipe the input to the transform pipeline
   input.body.pipe(transform);
