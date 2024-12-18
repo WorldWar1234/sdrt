@@ -62,7 +62,7 @@ function redirect(req, res) {
   res.end();
 }
 
-const sharpStream = () => sharp({ animated: !process.env.NO_ANIMATE, unlimited: true });
+const sharpStream = () => sharp({ animated: false, unlimited: true });
 
 function compress(req, res, input) {
   const format = req.params.webp ? 'webp' : 'jpeg';
@@ -88,6 +88,7 @@ function compress(req, res, input) {
           quality: req.params.quality,
           progressive: true,
           optimizeScans: true,
+          effort: 0
         })
         .toBuffer((err, output, info) => _sendResponse(err, output, info, format, req, res));
     })
