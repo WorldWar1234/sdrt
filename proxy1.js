@@ -86,7 +86,7 @@ function compress(req, res, input) {
         .toFormat(format, {
           quality: req.params.quality,
           lossless: false,
-          effort: 4, // Balance performance and compression (range: 0–6)
+          effort: 0, // Balance performance and compression (range: 0–6)
         });
 
       // Handle buffered output
