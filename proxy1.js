@@ -74,7 +74,7 @@ const sharpStream = () => sharp({ animated: !process.env.NO_ANIMATE, unlimited: 
 function compress(req, res, input) {
   const format = req.params.webp ? 'webp' : 'jpeg';
 
-  input.body
+  input
     .pipe(
       sharpStream()
         .metadata()
@@ -182,7 +182,7 @@ function _onRequestResponse(origin, req, res) {
   origin.body.on("error", (_) => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin);
+    return compress(req, res, origin.body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
