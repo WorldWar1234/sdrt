@@ -62,64 +62,59 @@ function redirect(req, res) {
   res.end();
 }
 
+"use strict";
+/*
+ * compress.js
+ * A module that compresses an image.
+ * compress(httpRequest, httpResponse, ReadableStream);
+ */
+
+const sharpStream = () => sharp({ animated: !process.env.NO_ANIMATE, unlimited: true });
+
 function compress(req, res, input) {
-  const format = "webp";
-  const transform = sharp();
+  const format = req.params.webp ? 'webp' : 'jpeg';
 
-  // Pipe the input to the transform pipeline
-  input.pipe(transform);
-
-  let outputBuffer = [];
-
-  // Fetch metadata and process the image
-  transform
-    .metadata()
-    .then((metadata) => {
-      // Resize if height exceeds the WebP limit
-      if (metadata.height > 16383) {
-        transform.resize({ height: 16383 });
-      }
-
-      // Apply grayscale and compression options
-      transform
-        .grayscale(req.params.grayscale)
-        .toFormat(format, {
-          quality: req.params.quality,
-          lossless: false,
-          effort: 0, // Balance performance and compression (range: 0–6)
-        });
-
-      // Handle buffered output
-      transform
-        .on('data', (chunk) => {
-          outputBuffer.push(chunk);  // Collect chunks of image data
+  input.body
+    .pipe(
+      sharpStream()
+        .metadata()
+        .then(metadata => {
+          if (metadata.height > 16383) {
+            return sharpStream()
+              .resize({ height: 16383 }) // Resize to max height of 16383, keeping aspect ratio
+              .grayscale(req.params.grayscale)
+              .toFormat(format, {
+                quality: req.params.quality,
+                progressive: true,
+                optimizeScans: true,
+                effort: 0
+              });
+          } else {
+            return sharpStream()
+              .grayscale(req.params.grayscale)
+              .toFormat(format, {
+                quality: req.params.quality,
+                progressive: true,
+                optimizeScans: true,
+                effort: 0
+              });
+          }
         })
-        .on('end', () => {
-          // Combine the buffered chunks
-          const finalBuffer = Buffer.concat(outputBuffer);
-
-          // Set response headers and send the buffered image data
-          res.setHeader("content-type", `image/${format}`);
-          res.setHeader("content-length", finalBuffer.length);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - finalBuffer.length);
-
-          res.end(finalBuffer);  // Send the final buffer to the response
-        })
-        .on('error', (err) => {
-          console.error("Compression error:", err.message);
-          redirect(req, res);
-        });
-    })
-    .catch((err) => {
-      console.error("Metadata error:", err.message);
-      redirect(req, res);
-    });
+    )
+    .toBuffer((err, output, info) => _sendResponse(err, output, info, format, req, res));
 }
 
+function _sendResponse(err, output, info, format, req, res) {
+  if (err || !info) return redirect(req, res);
 
-
-
+  res.setHeader('content-type', 'image/' + format);
+  res.setHeader('content-length', info.size);
+  res.setHeader('x-original-size', req.params.originSize);
+  res.setHeader('x-bytes-saved', req.params.originSize - info.size);
+  res.status(200);
+  res.write(output);
+  res.end();
+}
 
 
 async function hhproxy(req, res) {
@@ -187,7 +182,7 @@ function _onRequestResponse(origin, req, res) {
   origin.body.on("error", (_) => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin.body);
+    return compress(req, res, origin);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
