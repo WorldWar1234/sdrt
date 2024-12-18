@@ -1,5 +1,6 @@
 "use strict";
 import { request } from "undici";
+import pick from "./pick.js";
 import sharp from "sharp";
 import UserAgent from "user-agents";
 
@@ -7,26 +8,21 @@ const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
-function pick(obj = {}, keys = []) {
+/*function pick(obj = {}, keys = []) {
   return keys.reduce((result, key) => {
     if (key in obj) {
       result[key] = obj[key];
     }
     return result;
   }, {});
-}
+}*/
 
 function copyHeaders(source, target) {
-  // Headers to exclude or filter
-  const excludeHeaders = ["set-cookie", "content-length"];
-  
   for (const [key, value] of Object.entries(source.headers)) {
     try {
-      if (!excludeHeaders.includes(key.toLowerCase())) {
-        target.setHeader(key, value);
-      }
-    } catch (error) {
-      console.error(`Failed to copy header "${key}": ${error.message}`);
+      target.setHeader(key, value)
+    } catch (e) {
+      console.log(e.message)
     }
   }
 }
@@ -62,61 +58,63 @@ function redirect(req, res) {
   res.end();
 }
 
-const sharpStream = () => sharp({ animated: false, unlimited: true });
-
 function compress(req, res, input) {
-  const format = req.params.webp ? 'webp' : 'jpeg';
+  const format = "webp";
+  sharp.cache(false);
+  sharp.simd(false);
+  sharp.concurrency(1);
+  const transform = sharp({
+    unlimited: true,
+    failOn: "none",
+    limitInputPixels: false
+  });
 
-  const compressor = sharpStream();
+  // Pipe the input to the transform pipeline
+  input.pipe(transform);
 
-  // Step 1: Retrieve metadata to check the height
-  compressor
+  // Fetch metadata and process the image
+  transform
     .metadata()
-    .then(metadata => {
-      let pipeline = compressor;
-
-      // Step 2: Check if height exceeds the limit and resize if necessary
+    .then((metadata) => {
+      // Resize if height exceeds the WebP limit
       if (metadata.height > 16383) {
-        const resizeHeight = 16383;
-        pipeline = sharpStream().resize({ height: resizeHeight }); // Resize the image
+        transform.resize({ height: 16383 });
       }
 
-      // Step 3: Continue with image processing
-      pipeline
+      // Apply grayscale and compression options
+      transform
         .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
-          progressive: true,
-          optimizeScans: true,
-          effort: 0
+          lossless: false,
+          effort: 0, // Balance performance and compression (range: 0–6)
+        });
+
+      // Pipe the output directly to the response
+      transform
+        .on('info', (info) => {
+          res.setHeader("content-type", `image/${format}`);
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
         })
-        .toBuffer((err, output, info) => _sendResponse(err, output, info, format, req, res));
+        .on('error', (err) => {
+          console.error("Compression error:", err.message);
+          redirect(req, res);
+        })
+        .pipe(res, { end: true });  // Directly pipe the transform output to the response
     })
-    .catch(err => {
-      console.error("Error retrieving metadata:", err);
-      redirect(req, res); // Redirect in case of errors
+    .catch((err) => {
+      console.error("Metadata error:", err.message);
+      redirect(req, res);
     });
-
-  input.body.pipe(compressor);
-}
-
-function _sendResponse(err, output, info, format, req, res) {
-  if (err || !info) return redirect(req, res);
-
-  res.setHeader('content-type', 'image/' + format);
-  res.setHeader('content-length', info.size);
-  res.setHeader('x-original-size', req.params.originSize);
-  res.setHeader('x-bytes-saved', req.params.originSize - info.size);
-  res.status(200);
-  res.write(output);
-  res.end();
 }
 
 
 async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
-    return res.end("bandwidth-hero-proxy");
+    return res.send("bandwidth-hero-proxy");
   }
 
   req.params = {
