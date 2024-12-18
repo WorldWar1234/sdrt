@@ -62,38 +62,41 @@ function redirect(req, res) {
   res.end();
 }
 
-"use strict";
-/*
- * compress.js
- * A module that compresses an image.
- * compress(httpRequest, httpResponse, ReadableStream);
- */
-
-const sharpStream = _ => sharp({ animated: false, unlimited: true });
+const sharpStream = () => sharp({ animated: !process.env.NO_ANIMATE, unlimited: true });
 
 function compress(req, res, input) {
-  const format = req.params.webp ? 'webp' : 'jpeg'
+  const format = req.params.webp ? 'webp' : 'jpeg';
 
-  /*
-   * Determine the uncompressed image size when there's no content-length header.
-   */
+  const compressor = sharpStream();
 
-  /*
-   * input.pipe => sharp (The compressor) => Send to httpResponse
-   * The following headers:
-   * |  Header Name  |            Description            |           Value            |
-   * |---------------|-----------------------------------|----------------------------|
-   * |x-original-size|Original photo size                |OriginSize                  |
-   * |x-bytes-saved  |Saved bandwidth from original photo|OriginSize - Compressed Size|
-   */
-  input.body.pipe(sharpStream()
-    .grayscale(req.params.grayscale)
-    .toFormat(format, {
-      quality: req.params.quality,
-      progressive: true,
-      optimizeScans: true
+  // Step 1: Retrieve metadata to check the height
+  compressor
+    .metadata()
+    .then(metadata => {
+      let pipeline = compressor;
+
+      // Step 2: Check if height exceeds the limit and resize if necessary
+      if (metadata.height > 16383) {
+        const resizeHeight = 16383;
+        pipeline = sharpStream().resize({ height: resizeHeight }); // Resize the image
+      }
+
+      // Step 3: Continue with image processing
+      pipeline
+        .grayscale(req.params.grayscale)
+        .toFormat(format, {
+          quality: req.params.quality,
+          progressive: true,
+          optimizeScans: true,
+        })
+        .toBuffer((err, output, info) => _sendResponse(err, output, info, format, req, res));
     })
-    .toBuffer((err, output, info) => _sendResponse(err, output, info, format, req, res)))
+    .catch(err => {
+      console.error("Error retrieving metadata:", err);
+      redirect(req, res); // Redirect in case of errors
+    });
+
+  input.body.pipe(compressor);
 }
 
 function _sendResponse(err, output, info, format, req, res) {
