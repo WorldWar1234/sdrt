@@ -69,39 +69,31 @@ function redirect(req, res) {
  * compress(httpRequest, httpResponse, ReadableStream);
  */
 
-const sharpStream = () => sharp({ animated: !process.env.NO_ANIMATE, unlimited: true });
+const sharpStream = _ => sharp({ animated: false, unlimited: true });
 
 function compress(req, res, input) {
-  const format = req.params.webp ? 'webp' : 'jpeg';
+  const format = req.params.webp ? 'webp' : 'jpeg'
 
-  input
-    .pipe(
-      sharpStream()
-        .metadata()
-        .then(metadata => {
-          if (metadata.height > 16383) {
-            return sharpStream()
-              .resize({ height: 16383 }) // Resize to max height of 16383, keeping aspect ratio
-              .grayscale(req.params.grayscale)
-              .toFormat(format, {
-                quality: req.params.quality,
-                progressive: true,
-                optimizeScans: true,
-                effort: 0
-              });
-          } else {
-            return sharpStream()
-              .grayscale(req.params.grayscale)
-              .toFormat(format, {
-                quality: req.params.quality,
-                progressive: true,
-                optimizeScans: true,
-                effort: 0
-              });
-          }
-        })
-    )
-    .toBuffer((err, output, info) => _sendResponse(err, output, info, format, req, res));
+  /*
+   * Determine the uncompressed image size when there's no content-length header.
+   */
+
+  /*
+   * input.pipe => sharp (The compressor) => Send to httpResponse
+   * The following headers:
+   * |  Header Name  |            Description            |           Value            |
+   * |---------------|-----------------------------------|----------------------------|
+   * |x-original-size|Original photo size                |OriginSize                  |
+   * |x-bytes-saved  |Saved bandwidth from original photo|OriginSize - Compressed Size|
+   */
+  input.body.pipe(sharpStream()
+    .grayscale(req.params.grayscale)
+    .toFormat(format, {
+      quality: req.params.quality,
+      progressive: true,
+      optimizeScans: true
+    })
+    .toBuffer((err, output, info) => _sendResponse(err, output, info, format, req, res)))
 }
 
 function _sendResponse(err, output, info, format, req, res) {
@@ -182,7 +174,7 @@ function _onRequestResponse(origin, req, res) {
   origin.body.on("error", (_) => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin.body);
+    return compress(req, res, origin);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
