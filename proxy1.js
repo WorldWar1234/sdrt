@@ -69,43 +69,54 @@ function compress(req, res, input) {
   // Pipe the input to the transform pipeline
   input.pipe(transform);
 
-  // Process the image with optimized settings
+  let outputBuffer = [];
+
+  // Fetch metadata and process the image
   transform
     .metadata()
     .then((metadata) => {
-      // Resize only if the height exceeds the WebP limit
+      // Resize if height exceeds the WebP limit
       if (metadata.height > 16383) {
         transform.resize({ height: 16383 });
       }
 
-      // Apply WebP conversion and optional grayscale
+      // Apply grayscale and compression options
       transform
+        .grayscale(req.params.grayscale)
         .toFormat(format, {
           quality: req.params.quality,
-          lossless: false, // Lossy for faster processing
-          effort: 1, // Lower effort (range: 0–6) for faster compression
-        })
-        .grayscale(req.params.grayscale);
+          lossless: false,
+          effort: 0, // Balance performance and compression (range: 0–6)
+        });
 
-      // Stream the transformed image to the response
+      // Handle buffered output
       transform
-        .on("info", (info) => {
-          res.setHeader("content-type", `image/${format}`);
-          res.setHeader("content-length", info.size);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+        .on('data', (chunk) => {
+          outputBuffer.push(chunk);  // Collect chunks of image data
         })
-        .on("error", (err) => {
+        .on('end', () => {
+          // Combine the buffered chunks
+          const finalBuffer = Buffer.concat(outputBuffer);
+
+          // Set response headers and send the buffered image data
+          res.setHeader("content-type", `image/${format}`);
+          res.setHeader("content-length", finalBuffer.length);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - finalBuffer.length);
+
+          res.end(finalBuffer);  // Send the final buffer to the response
+        })
+        .on('error', (err) => {
           console.error("Compression error:", err.message);
           redirect(req, res);
-        })
-        .pipe(res);
+        });
     })
     .catch((err) => {
       console.error("Metadata error:", err.message);
       redirect(req, res);
     });
 }
+
 
 
 
