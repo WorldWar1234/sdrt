@@ -69,6 +69,8 @@ function compress(req, res, input) {
   // Pipe the input to the transform pipeline
   input.pipe(transform);
 
+  let outputBuffer = [];
+
   // Fetch metadata and process the image
   transform
     .metadata()
@@ -84,28 +86,37 @@ function compress(req, res, input) {
         .toFormat(format, {
           quality: req.params.quality,
           lossless: false,
-          effort: 0, // Balance performance and compression (range: 0–6)
+          effort: 4, // Balance performance and compression (range: 0–6)
         });
 
-      // Pipe the output directly to the response
+      // Handle buffered output
       transform
-        .on('info', (info) => {
+        .on('data', (chunk) => {
+          outputBuffer.push(chunk);  // Collect chunks of image data
+        })
+        .on('end', () => {
+          // Combine the buffered chunks
+          const finalBuffer = Buffer.concat(outputBuffer);
+
+          // Set response headers and send the buffered image data
           res.setHeader("content-type", `image/${format}`);
-          res.setHeader("content-length", info.size);
+          res.setHeader("content-length", finalBuffer.length);
           res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+          res.setHeader("x-bytes-saved", req.params.originSize - finalBuffer.length);
+
+          res.end(finalBuffer);  // Send the final buffer to the response
         })
         .on('error', (err) => {
           console.error("Compression error:", err.message);
           redirect(req, res);
-        })
-        .pipe(res, { end: true });  // Directly pipe the transform output to the response
+        });
     })
     .catch((err) => {
       console.error("Metadata error:", err.message);
       redirect(req, res);
     });
 }
+
 
 
 
