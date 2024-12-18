@@ -86,6 +86,7 @@ function compress(req, res, input) {
           effort: 1, // Lower effort (range: 0–6) for faster compression
         })
         .grayscale(req.params.grayscale);
+        .withMetadata({ orientation: metadata.orientation })
 
       // Stream the transformed image to the response
       transform
@@ -106,6 +107,7 @@ function compress(req, res, input) {
       redirect(req, res);
     });
 }
+
 
 
 async function hhproxy(req, res) {
