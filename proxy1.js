@@ -1,24 +1,36 @@
 "use strict";
-import { request } from 'undici';
+import { request } from "undici";
 import sharp from "sharp";
-//import pick from "./pick.js";
-import UserAgent from 'user-agents';
+import UserAgent from "user-agents";
 
 const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
-function pick(obj, keys) {
-  const result = {};
-  keys.forEach((key) => {
-    if (obj[key]) {
+function pick(obj = {}, keys = []) {
+  return keys.reduce((result, key) => {
+    if (key in obj) {
       result[key] = obj[key];
     }
-  });
-  return result;
+    return result;
+  }, {});
 }
 
-// Helper: Should compress
+function copyHeaders(source, target) {
+  // Headers to exclude or filter
+  const excludeHeaders = ["set-cookie", "content-length"];
+  
+  for (const [key, value] of Object.entries(source.headers)) {
+    try {
+      if (!excludeHeaders.includes(key.toLowerCase())) {
+        target.setHeader(key, value);
+      }
+    } catch (error) {
+      console.error(`Failed to copy header "${key}": ${error.message}`);
+    }
+  }
+}
+
 function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
 
@@ -37,19 +49,6 @@ function shouldCompress(req) {
   return true;
 }
 
-// Helper: Copy headers
-function copyHeaders(source, target) {
-  for (const [key, value] of Object.entries(source.headers)) {
-    try {
-      target.setHeader(key, value)
-    } catch (e) {
-      console.log(e.message)
-    }
-  }
-}
-
-
-// Helper: Redirect
 function redirect(req, res) {
   if (res.headersSent) return;
 
@@ -63,44 +62,53 @@ function redirect(req, res) {
   res.end();
 }
 
-// Helper: Compress
 function compress(req, res, input) {
-    const format = "webp";
-      const transform = sharp();
+  const format = "webp";
+  const transform = sharp();
 
-    input.pipe(transform);
+  // Pipe the input to the transform pipeline
+  input.pipe(transform);
 
-    transform
-        .metadata()
-        .then(metadata => {
-            
-            if (metadata.height > 16383) {
-                transform.resize(null, 16383);
-            }
-          
-            // Apply further transformations and pipe the result
-            transform
-                .grayscale(req.params.grayscale)
-                .toFormat(format, {
-                    quality: req.params.quality,
-                    lossless: false,
-                     effort: 0
-                })
-                .on('info', info => {
-                    // Set response headers
-                    res.setHeader('content-type', `image/${format}`);
-                    res.setHeader('content-length', info.size);
-                    res.setHeader('x-original-size', req.params.originSize);
-                    res.setHeader('x-bytes-saved', req.params.originSize - info.size);
-                })
-                .on('error', () => redirect(req, res)) // Redirect on error
-                .pipe(res); // Stream the processed image to the client
+  // Process the image with optimized settings
+  transform
+    .metadata()
+    .then((metadata) => {
+      // Resize only if the height exceeds the WebP limit
+      if (metadata.height > 16383) {
+        transform.resize({ height: 16383 });
+      }
+
+      // Apply WebP conversion and optional grayscale
+      transform
+        .toFormat(format, {
+          quality: req.params.quality,
+          lossless: false, // Lossy for faster processing
+          effort: 1, // Lower effort (range: 0–6) for faster compression
         })
-        .catch(() => redirect(req, res)); // Handle metadata errors
+        .grayscale(req.params.grayscale);
+
+      // Stream the transformed image to the response
+      transform
+        .on("info", (info) => {
+          res.setHeader("content-type", `image/${format}`);
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-original-size", req.params.originSize);
+          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+        })
+        .on("error", (err) => {
+          console.error("Compression error:", err.message);
+          redirect(req, res);
+        })
+        .pipe(res);
+    })
+    .catch((err) => {
+      console.error("Metadata error:", err.message);
+      redirect(req, res);
+    });
 }
 
-// Main proxy handler for bandwidth optimization.
-  async function hhproxy(req, res) {
+
+async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.end("bandwidth-hero-proxy");
@@ -110,7 +118,7 @@ function compress(req, res, input) {
     url: decodeURIComponent(url),
     webp: !req.query.jpeg,
     grayscale: req.query.bw != 0,
-    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
   const userAgent = new UserAgent();
@@ -119,13 +127,13 @@ function compress(req, res, input) {
       ...pick(req.headers, ["cookie", "dnt", "referer", "range"]),
       "User-Agent": userAgent.toString(),
       "X-Forwarded-For": req.headers["x-forwarded-for"] || req.ip,
-      Via: "1.1 bandwidth-hero"
+      Via: "1.1 bandwidth-hero",
     },
-    method: 'GET',
+    method: "GET",
     rejectUnauthorized: false,
-    maxRedirects: 4
+    maxRedirects: 4,
   };
-    
+
   try {
     let origin = await request(req.params.url, options);
     _onRequestResponse(origin, req, res);
@@ -151,7 +159,7 @@ function _onRequestResponse(origin, req, res) {
 
   if (origin.statusCode >= 300 && origin.headers.location) {
     req.params.url = origin.headers.location;
-    return redirect(req, res); // Follow the redirect manually
+    return redirect(req, res);
   }
 
   copyHeaders(origin, res);
@@ -164,18 +172,20 @@ function _onRequestResponse(origin, req, res) {
   req.params.originType = origin.headers["content-type"] || "";
   req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
 
-  origin.body.on('error', _ => req.socket.destroy());
+  origin.body.on("error", (_) => req.socket.destroy());
 
   if (shouldCompress(req)) {
     return compress(req, res, origin.body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
-    ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-      if (origin.headers[header]) {
-        res.setHeader(header, origin.headers[header]);
+    ["accept-ranges", "content-type", "content-length", "content-range"].forEach(
+      (header) => {
+        if (origin.headers[header]) {
+          res.setHeader(header, origin.headers[header]);
+        }
       }
-    });
+    );
 
     return origin.body.pipe(res);
   }
