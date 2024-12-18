@@ -70,7 +70,7 @@ function compress(req, res, input) {
   });
 
   // Pipe the input to the transform pipeline
-  input.pipe(transform);
+  input.body.pipe(transform);
 
   // Fetch metadata and process the image
   transform
