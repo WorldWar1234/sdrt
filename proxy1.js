@@ -86,14 +86,34 @@ async function compress(req, res, input) {
       lossless: false, // Use lossy for faster compression
       effort: 0, // Balance compression speed and quality
       //smartSubsample: true, // Use smarter chroma subsampling
-    //  alphaQuality: 70, // Specific for transparency handling in WebP
+      //alphaQuality: 70, // Specific for transparency handling in WebP
     };
 
     transform.toFormat(format, webpOptions);
 
+    // Stream setup with buffer limit
+    let buffer = Buffer.alloc(0); // Start with an empty buffer
+    let totalBytes = 0;
+
+    transform.on('data', (chunk) => {
+      totalBytes += chunk.length;
+      if (totalBytes <= 1024 * 1024) { // Check if we're within 1MB limit
+        buffer = Buffer.concat([buffer, chunk]);
+      } else {
+        // Send the buffer if we've gone over 1MB
+        if (buffer.length > 0) {
+          res.write(buffer);
+          buffer = Buffer.alloc(0); // Reset buffer
+        }
+        // Directly write chunks larger than 1MB
+        res.write(chunk);
+      }
+    });
+
     transform.on('info', (info) => {
       res.setHeader('Content-Type', `image/${format}`);
-      res.setHeader('Content-Length', info.size);
+      // We can't set Content-Length accurately here as we're streaming, so remove this line:
+      // res.setHeader('Content-Length', info.size);
       res.setHeader('X-Original-Size', req.params.originSize);
       res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
     });
@@ -103,10 +123,13 @@ async function compress(req, res, input) {
       redirect(req, res);
     });
 
-    // Implementing backpressure handling: Piping the transform stream to the response
-    // Stream automatically handles backpressure. The writable stream (response) will signal to
-    // the readable stream (sharp transformation) when it is ready for more data.
-    transform.pipe(res, { end: true });
+    transform.on('end', () => {
+      // Write any remaining buffer data
+      if (buffer.length > 0) {
+        res.write(buffer);
+      }
+      res.end(); // End the response stream
+    });
 
   } catch (err) {
     console.error('Metadata error:', err.message);
