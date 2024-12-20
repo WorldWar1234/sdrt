@@ -52,81 +52,71 @@ function redirect(req, res) {
   res.end();
 }
 
-function sharpStream() {
-  return sharp({ animated: false, unlimited: true });
-}
 
 
 import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
+import { Transform } from 'stream';
+
+const MAX_BUFFER_SIZE = 1048576; // 1MB
 
 async function compress(req, res, input) {
   const format = "webp";
   const quality = req.params.quality || DEFAULT_QUALITY;
-  const tempCacheDir = path.join(__dirname, 'temp_cache'); // Directory for caching
 
-  // Ensure the cache directory exists
-  if (!fs.existsSync(tempCacheDir)) {
-    fs.mkdirSync(tempCacheDir, { recursive: true });
-  }
-
-  const fileHash = crypto.createHash('md5').update(req.params.url).digest('hex');
-  const cachePath = path.join(tempCacheDir, `${fileHash}.webp`);
-
-  // Check if the cached image exists and is fresh enough
-  if (fs.existsSync(cachePath)) {
-    const cacheStats = fs.statSync(cachePath);
-    const cacheAge = Date.now() - cacheStats.mtimeMs;
-
-    // If cache is less than 1 hour old, serve it
-    if (cacheAge < 3600000) {
-      console.log('Serving cached image');
-      res.setHeader('Content-Type', 'image/webp');
-      res.setHeader('Content-Length', cacheStats.size);
-      return fs.createReadStream(cachePath).pipe(res);
-    }
-  }
+  let buffer = Buffer.alloc(0); // Start with an empty buffer
+  let isBufferFull = false;
 
   // Disable sharp cache and enable SIMD for speed
   sharp.cache(false);
   sharp.simd(true);
   sharp.concurrency(1); // Limit concurrency for optimal performance
 
-  const transform = sharpStream();
-  input.body.pipe(transform);
+  // Custom transform stream to handle buffering
+  const bufferStream = new Transform({
+    transform(chunk, encoding, callback) {
+      // If the buffer has not reached 1MB, keep appending to it
+      if (!isBufferFull) {
+        buffer = Buffer.concat([buffer, chunk]);
+        if (buffer.length >= MAX_BUFFER_SIZE) {
+          isBufferFull = true;
+          // Once the buffer is full, process the first part of the image and start streaming
+          input.body.unshift(buffer); // Push the buffered data back into the stream
+          buffer = Buffer.alloc(0); // Clear the buffer
+        }
+      }
+      // If the buffer is full, directly pass the chunk through to the next step
+      this.push(chunk);
+      callback();
+    },
+  });
+
+  input.body.pipe(bufferStream); // Pipe the input body through the buffering stream
 
   try {
-    const metadata = await transform.metadata();
+    const metadata = await sharp(bufferStream).metadata();
 
-    // Conditional resizing based on image height
+    // Conditional resizing based on image height (only resize if height exceeds limit)
     if (metadata.height > 16383) {
-      console.log('Resizing image to height limit');
-      transform.resize({ height: 16383 });
-    }
-
-    // Adjust compression quality dynamically based on image size
-    let adjustedQuality = quality;
-    if (metadata.size > 1000000) {  // Larger images get lower quality
-      adjustedQuality = Math.max(20, adjustedQuality - 10);
-      console.log(`Adjusting quality for large image: ${adjustedQuality}`);
+      console.log('Resizing image to height limit of 16383px');
+      sharp(bufferStream).resize({ height: 16383 });
     }
 
     // Apply grayscale if requested
     if (req.params.grayscale) {
-      transform.grayscale();
+      sharp(bufferStream).grayscale();
     }
 
     // Optimize WebP options for compression
     const webpOptions = {
-      quality: adjustedQuality,
+      quality: quality,
       lossless: false, // Use lossy for faster compression
       effort: 3, // Balance compression speed and quality
       smartSubsample: true, // Use smarter chroma subsampling
       alphaQuality: 70, // Specific for transparency handling in WebP
     };
 
-    transform.toFormat(format, webpOptions);
+    // Apply the WebP format and compression
+    const transform = sharp(bufferStream).toFormat(format, webpOptions);
 
     transform.on('info', (info) => {
       res.setHeader('Content-Type', `image/${format}`);
@@ -140,20 +130,15 @@ async function compress(req, res, input) {
       redirect(req, res);
     });
 
-    // Stream the transformed image to the response
-    const stream = transform.pipe(res, { end: true });
-
-    // After the transformation, cache the image if it's not already cached
-    stream.on('finish', () => {
-      fs.writeFileSync(cachePath, stream);
-      console.log('Image cached at:', cachePath);
-    });
+    // Start streaming the processed image to the response
+    transform.pipe(res, { end: true });
 
   } catch (err) {
     console.error('Metadata error:', err.message);
     redirect(req, res);
   }
 }
+
 
 
 async function hhproxy(req, res) {
