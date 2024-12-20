@@ -65,7 +65,7 @@ async function compress(req, res, input) {
   sharp.simd(true);
   sharp.concurrency(4); // Limit concurrency for optimal performance
 
-  const transform = sharpStream();
+  const transform = sharp();
   input.body.pipe(transform);
 
   try {
