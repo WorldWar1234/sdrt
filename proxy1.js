@@ -56,7 +56,7 @@ function sharpStream() {
   return sharp({ animated: false, unlimited: true });
 }
 
-function compress(req, res, input) {
+async function compress(req, res, input) {
   const format = "webp";
   sharp.cache(false);
   sharp.simd(false);
@@ -66,7 +66,7 @@ function compress(req, res, input) {
   input.body.pipe(transform);
 
   try {
-    const metadata = transform.metadata();
+    const metadata = await transform.metadata();
 
     // Resize if height exceeds the WebP limit
     if (metadata.height > 16383) {
@@ -93,14 +93,14 @@ function compress(req, res, input) {
       redirect(req, res);
     });
 
-    transform.pipe(res);
+    transform.pipe(res, { end: true });
   } catch (err) {
     console.error("Metadata error:", err.message);
     redirect(req, res);
   }
 }
 
-function hhproxy(req, res) {
+async function hhproxy(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.send("bandwidth-hero-proxy");
@@ -126,7 +126,7 @@ function hhproxy(req, res) {
   };
 
   try {
-    const origin = request(req.params.url, options);
+    const origin = await request(req.params.url, options);
     _onRequestResponse(origin, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
