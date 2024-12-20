@@ -54,69 +54,42 @@ function redirect(req, res) {
 
 
 
-import fs from 'fs';
-import { Transform } from 'stream';
-
-const MAX_BUFFER_SIZE = 1048576; // 1MB
-
 async function compress(req, res, input) {
   const format = "webp";
   const quality = req.params.quality || DEFAULT_QUALITY;
-
-  let buffer = Buffer.alloc(0); // Start with an empty buffer
-  let isBufferFull = false;
 
   // Disable sharp cache and enable SIMD for speed
   sharp.cache(false);
   sharp.simd(true);
   sharp.concurrency(1); // Limit concurrency for optimal performance
 
-  // Custom transform stream to handle buffering
-  const bufferStream = new Transform({
-    transform(chunk, encoding, callback) {
-      // If the buffer has not reached 1MB, keep appending to it
-      if (!isBufferFull) {
-        buffer = Buffer.concat([buffer, chunk]);
-        if (buffer.length >= MAX_BUFFER_SIZE) {
-          isBufferFull = true;
-          // Once the buffer is full, process the first part of the image and start streaming
-          input.body.unshift(buffer); // Push the buffered data back into the stream
-          buffer = Buffer.alloc(0); // Clear the buffer
-        }
-      }
-      // If the buffer is full, directly pass the chunk through to the next step
-      this.push(chunk);
-      callback();
-    },
-  });
-
-  input.body.pipe(bufferStream); // Pipe the input body through the buffering stream
+  const transform = sharp();
+  input.body.pipe(transform); // Pipe the input image directly to the transform stream
 
   try {
-    const metadata = await sharp(bufferStream).metadata();
+    const metadata = await transform.metadata();
 
     // Conditional resizing based on image height (only resize if height exceeds limit)
     if (metadata.height > 16383) {
       console.log('Resizing image to height limit of 16383px');
-      sharp(bufferStream).resize({ height: 16383 });
+      transform.resize({ height: 16383 });
     }
 
     // Apply grayscale if requested
     if (req.params.grayscale) {
-      sharp(bufferStream).grayscale();
+      transform.grayscale();
     }
 
     // Optimize WebP options for compression
     const webpOptions = {
       quality: quality,
       lossless: false, // Use lossy for faster compression
-      effort: 3, // Balance compression speed and quality
-      smartSubsample: true, // Use smarter chroma subsampling
-      alphaQuality: 70, // Specific for transparency handling in WebP
+      effort: 0, // Balance compression speed and quality
+      //smartSubsample: true, // Use smarter chroma subsampling
+    //  alphaQuality: 70, // Specific for transparency handling in WebP
     };
 
-    // Apply the WebP format and compression
-    const transform = sharp(bufferStream).toFormat(format, webpOptions);
+    transform.toFormat(format, webpOptions);
 
     transform.on('info', (info) => {
       res.setHeader('Content-Type', `image/${format}`);
@@ -130,7 +103,9 @@ async function compress(req, res, input) {
       redirect(req, res);
     });
 
-    // Start streaming the processed image to the response
+    // Implementing backpressure handling: Piping the transform stream to the response
+    // Stream automatically handles backpressure. The writable stream (response) will signal to
+    // the readable stream (sharp transformation) when it is ready for more data.
     transform.pipe(res, { end: true });
 
   } catch (err) {
@@ -138,6 +113,7 @@ async function compress(req, res, input) {
     redirect(req, res);
   }
 }
+
 
 
 
