@@ -58,9 +58,12 @@ function sharpStream() {
 
 async function compress(req, res, input) {
   const format = "webp";
+  const quality = req.params.quality || DEFAULT_QUALITY;
+
+  // Disable sharp cache and enable SIMD for speed
   sharp.cache(false);
-  sharp.simd(false);
-  sharp.concurrency(1);
+  sharp.simd(true);
+  sharp.concurrency(4); // Limit concurrency for optimal performance
 
   const transform = sharpStream();
   input.body.pipe(transform);
@@ -68,34 +71,45 @@ async function compress(req, res, input) {
   try {
     const metadata = await transform.metadata();
 
-    // Resize if height exceeds the WebP limit
+    // Conditional resizing based on image height
     if (metadata.height > 16383) {
+      console.log('Resizing image to height limit of 16383px');
       transform.resize({ height: 16383 });
     }
 
-    transform
-      .grayscale(req.params.grayscale)
-      .toFormat(format, {
-        quality: req.params.quality,
-        lossless: false,
-        effort: 0, // Balance performance and compression (range: 0–6)
-      });
+    // Apply grayscale if requested
+    if (req.params.grayscale) {
+      transform.grayscale();
+    }
 
-    transform.on("info", (info) => {
-      res.setHeader("content-type", `image/${format}`);
-      res.setHeader("content-length", info.size);
-      res.setHeader("x-original-size", req.params.originSize);
-      res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+    // Optimize WebP options for compression
+    const webpOptions = {
+      quality: quality,
+      lossless: false, // Use lossy for faster compression
+      effort: 0, // Balance compression speed and quality
+      smartSubsample: true, // Use smarter chroma subsampling
+      alphaQuality: 70, // Specific for transparency handling in WebP
+    };
+
+    transform.toFormat(format, webpOptions);
+
+    transform.on('info', (info) => {
+      res.setHeader('Content-Type', `image/${format}`);
+      res.setHeader('Content-Length', info.size);
+      res.setHeader('X-Original-Size', req.params.originSize);
+      res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
     });
 
-    transform.on("error", (err) => {
-      console.error("Compression error:", err.message);
+    transform.on('error', (err) => {
+      console.error('Compression error:', err.message);
       redirect(req, res);
     });
 
+    // Stream the transformed image to the response
     transform.pipe(res, { end: true });
+
   } catch (err) {
-    console.error("Metadata error:", err.message);
+    console.error('Metadata error:', err.message);
     redirect(req, res);
   }
 }
