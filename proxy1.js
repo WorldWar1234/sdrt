@@ -58,7 +58,7 @@ function compress(req, res, input) {
     const format = req.params.webp ? 'webp' : 'jpeg';
     const transform = sharp();
     
-    input.pipe(transform);
+    input.body.pipe(transform);
 
     transform.metadata()
         .then(metadata => {
