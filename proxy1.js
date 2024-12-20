@@ -54,87 +54,48 @@ function redirect(req, res) {
 
 
 
-async function compress(req, res, input) {
-  const format = "webp";
-  const quality = req.params.quality || DEFAULT_QUALITY;
+function compress(req, res, input) {
+    const format = req.params.webp ? 'webp' : 'jpeg';
+    const transform = sharp();
+    
+    input.pipe(transform);
 
-  // Disable sharp cache and enable SIMD for speed
-  sharp.cache(false);
-  sharp.simd(true);
-  sharp.concurrency(1); // Limit concurrency for optimal performance
+    transform.metadata()
+        .then(metadata => {
+            // Resize if height exceeds 16383 pixels
+            if (metadata.height > 16383) {
+                transform.resize({ height: 16383, width: null });
+            }
 
-  const transform = sharp();
-  input.body.pipe(transform); // Pipe the input image directly to the transform stream
-
-  try {
-    const metadata = await transform.metadata();
-
-    // Conditional resizing based on image height (only resize if height exceeds limit)
-    if (metadata.height > 16383) {
-      console.log('Resizing image to height limit of 16383px');
-      transform.resize({ height: 16383 });
-    }
-
-    // Apply grayscale if requested
-    if (req.params.grayscale) {
-      transform.grayscale();
-    }
-
-    // Optimize WebP options for compression
-    const webpOptions = {
-      quality: quality,
-      lossless: false, // Use lossy for faster compression
-      effort: 0, // Balance compression speed and quality
-      //smartSubsample: true, // Use smarter chroma subsampling
-      //alphaQuality: 70, // Specific for transparency handling in WebP
-    };
-
-    transform.toFormat(format, webpOptions);
-
-    // Stream setup with buffer limit
-    let buffer = Buffer.alloc(0); // Start with an empty buffer
-    let totalBytes = 0;
-
-    transform.on('data', (chunk) => {
-      totalBytes += chunk.length;
-      if (totalBytes <= 1024 * 1024) { // Check if we're within 1MB limit
-        buffer = Buffer.concat([buffer, chunk]);
-      } else {
-        // Send the buffer if we've gone over 1MB
-        if (buffer.length > 0) {
-          res.write(buffer);
-          buffer = Buffer.alloc(0); // Reset buffer
-        }
-        // Directly write chunks larger than 1MB
-        res.write(chunk);
-      }
-    });
-
-    transform.on('info', (info) => {
-      res.setHeader('Content-Type', `image/${format}`);
-      // We can't set Content-Length accurately here as we're streaming, so remove this line:
-      // res.setHeader('Content-Length', info.size);
-      res.setHeader('X-Original-Size', req.params.originSize);
-      res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
-    });
-
-    transform.on('error', (err) => {
-      console.error('Compression error:', err.message);
-      redirect(req, res);
-    });
-
-    transform.on('end', () => {
-      // Write any remaining buffer data
-      if (buffer.length > 0) {
-        res.write(buffer);
-      }
-      res.end(); // End the response stream
-    });
-
-  } catch (err) {
-    console.error('Metadata error:', err.message);
-    redirect(req, res);
-  }
+            transform
+              .grayscale(req.params.grayscale)
+                .toFormat(format, {
+                    quality: req.params.quality,
+                    progressive: true,
+                    optimizeScans: true
+                })
+                .on('data', (chunk) => {
+                    // Write chunks to the response
+                    if (!res.headersSent) {
+                        res.setHeader('content-type', `image/${format}`);
+                        res.setHeader('x-original-size', req.params.originSize);
+                        res.setHeader('x-bytes-saved', req.params.originSize - req.params.quality);
+                    }
+                    res.write(chunk);  // Send the current chunk to the client
+                })
+                .on('end', () => {
+                    // Finish the response after all chunks are written
+                    res.end();
+                })
+                .on('error', err => {
+                    console.error('Error processing image:', err);
+                    redirect(req, res);
+                });
+        })
+        .catch(err => {
+            console.error('Error processing image:', err);
+            redirect(req, res);
+        });
 }
 
 
