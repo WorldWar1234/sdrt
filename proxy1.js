@@ -55,48 +55,64 @@ function redirect(req, res) {
 
 
 function compress(req, res, input) {
-    const format = req.params.webp ? 'webp' : 'jpeg';
-    const transform = sharp();
-    
-    input.body.pipe(transform);
+  const format = "webp";
+  sharp.cache(false);
+  sharp.simd(false);
+  sharp.concurrency(1);
+  const transform = sharp();
 
-    transform.metadata()
-        .then(metadata => {
-            // Resize if height exceeds 16383 pixels
-            if (metadata.height > 16383) {
-                transform.resize({ height: 16383, width: null });
-            }
+  // Pipe the input to the transform pipeline
+  input.body.pipe(transform);
 
-            transform
-              .grayscale(req.params.grayscale)
-                .toFormat(format, {
-                    quality: req.params.quality,
-                    progressive: true,
-                    optimizeScans: true
-                })
-                .on('data', (chunk) => {
-                    // Write chunks to the response
-                    if (!res.headersSent) {
-                        res.setHeader('content-type', `image/${format}`);
-                        res.setHeader('x-original-size', req.params.originSize);
-                        res.setHeader('x-bytes-saved', req.params.originSize - req.params.quality);
-                    }
-                    res.write(chunk);  // Send the current chunk to the client
-                })
-                .on('end', () => {
-                    // Finish the response after all chunks are written
-                    res.end();
-                })
-                .on('error', err => {
-                    console.error('Error processing image:', err);
-                    redirect(req, res);
-                });
-        })
-        .catch(err => {
-            console.error('Error processing image:', err);
-            redirect(req, res);
+  // Fetch metadata and process the image
+  transform
+    .metadata()
+    .then((metadata) => {
+      // Resize if height exceeds the WebP limit
+      if (metadata.height > 16383) {
+        transform.resize({ height: 16383 });
+      }
+
+      // Apply grayscale and compression options
+      transform
+        .grayscale(req.params.grayscale)
+        .toFormat(format, {
+          quality: req.params.quality,
+          lossless: false,
+          effort: 0, // Balance performance and compression (range: 0–6)
         });
+
+      // Set response headers for content type and original size
+      res.setHeader("content-type", `image/${format}`);
+      res.setHeader("x-original-size", req.params.originSize);
+
+      // Pipe the output directly to the response in chunks
+      let originalSize = req.params.originSize;
+
+      transform
+        .on('data', (chunk) => {
+          // Send each chunk as it's processed
+          res.write(chunk);
+        })
+        .on('end', () => {
+          // After all chunks are sent, finalize the response
+          res.end();
+        })
+        .on('info', (info) => {
+          res.setHeader("content-length", info.size);
+          res.setHeader("x-bytes-saved", originalSize - info.size);
+        })
+        .on('error', (err) => {
+          console.error("Compression error:", err.message);
+          redirect(req, res);
+        });
+    })
+    .catch((err) => {
+      console.error("Metadata error:", err.message);
+      redirect(req, res);
+    });
 }
+
 
 
 
