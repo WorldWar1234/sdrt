@@ -93,7 +93,7 @@ async function compress(req, res, input) {
       redirect(req, res);
     });
 
-    transform.pipe(res, { end: true });
+    transform.pipe(res);
   } catch (err) {
     console.error("Metadata error:", err.message);
     redirect(req, res);
