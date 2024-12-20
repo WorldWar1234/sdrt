@@ -8,21 +8,12 @@ const DEFAULT_QUALITY = 40;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
-/*function pick(obj = {}, keys = []) {
-  return keys.reduce((result, key) => {
-    if (key in obj) {
-      result[key] = obj[key];
-    }
-    return result;
-  }, {});
-}*/
-
 function copyHeaders(source, target) {
   for (const [key, value] of Object.entries(source.headers)) {
     try {
-      target.setHeader(key, value)
+      target.setHeader(key, value);
     } catch (e) {
-      console.log(e.message)
+      console.error(`Error copying header ${key}:`, e.message);
     }
   }
 }
@@ -31,9 +22,9 @@ function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
 
   if (!originType.startsWith("image")) return false;
-  if (originSize === 0) return false;
-  if (req.headers.range) return false;
-  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
+  if (originSize === 0 || req.headers.range) return false;
+  
+  // Only compress PNG/GIF if large enough or webp is requested
   if (
     !webp &&
     (originType.endsWith("png") || originType.endsWith("gif")) &&
@@ -41,6 +32,9 @@ function shouldCompress(req) {
   ) {
     return false;
   }
+
+  // Compress webp images only if above the minimum size threshold
+  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
 
   return true;
 }
@@ -57,56 +51,54 @@ function redirect(req, res) {
   res.statusCode = 302;
   res.end();
 }
-const sharpStream = _ => sharp({ animated: false, unlimited: true });
 
-function compress(req, res, input) {
+function sharpStream() {
+  return sharp({ animated: false, unlimited: true });
+}
+
+async function compress(req, res, input) {
   const format = "webp";
   sharp.cache(false);
   sharp.simd(false);
   sharp.concurrency(1);
-  const transform = sharpStream();
 
-  // Pipe the input to the transform pipeline
+  const transform = sharpStream();
   input.body.pipe(transform);
 
-  // Fetch metadata and process the image
-  transform
-    .metadata()
-    .then((metadata) => {
-      // Resize if height exceeds the WebP limit
-      if (metadata.height > 16383) {
-        transform.resize({ height: 16383 });
-      }
+  try {
+    const metadata = await transform.metadata();
 
-      // Apply grayscale and compression options
-      transform
-        .grayscale(req.params.grayscale)
-        .toFormat(format, {
-          quality: req.params.quality,
-          lossless: false,
-          effort: 0, // Balance performance and compression (range: 0–6)
-        });
+    // Resize if height exceeds the WebP limit
+    if (metadata.height > 16383) {
+      transform.resize({ height: 16383 });
+    }
 
-      // Pipe the output directly to the response
-      transform
-        .on('info', (info) => {
-          res.setHeader("content-type", `image/${format}`);
-          res.setHeader("content-length", info.size);
-          res.setHeader("x-original-size", req.params.originSize);
-          res.setHeader("x-bytes-saved", req.params.originSize - info.size);
-        })
-        .on('error', (err) => {
-          console.error("Compression error:", err.message);
-          redirect(req, res);
-        })
-        .pipe(res, { end: true });  // Directly pipe the transform output to the response
-    })
-    .catch((err) => {
-      console.error("Metadata error:", err.message);
+    transform
+      .grayscale(req.params.grayscale)
+      .toFormat(format, {
+        quality: req.params.quality,
+        lossless: false,
+        effort: 0, // Balance performance and compression (range: 0–6)
+      });
+
+    transform.on("info", (info) => {
+      res.setHeader("content-type", `image/${format}`);
+      res.setHeader("content-length", info.size);
+      res.setHeader("x-original-size", req.params.originSize);
+      res.setHeader("x-bytes-saved", req.params.originSize - info.size);
+    });
+
+    transform.on("error", (err) => {
+      console.error("Compression error:", err.message);
       redirect(req, res);
     });
-}
 
+    transform.pipe(res, { end: true });
+  } catch (err) {
+    console.error("Metadata error:", err.message);
+    redirect(req, res);
+  }
+}
 
 async function hhproxy(req, res) {
   const url = req.query.url;
@@ -130,10 +122,11 @@ async function hhproxy(req, res) {
       Via: "1.1 bandwidth-hero",
     },
     maxRedirects: 4,
+    timeout: 5000, // Add a timeout to avoid hanging requests
   };
 
   try {
-    let origin = await request(req.params.url, options);
+    const origin = await request(req.params.url, options);
     _onRequestResponse(origin, req, res);
   } catch (err) {
     _onRequestError(req, res, err);
@@ -146,8 +139,9 @@ function _onRequestError(req, res, err) {
     return res.end("Invalid URL");
   }
 
+  // Redirect for other errors
   redirect(req, res);
-  console.error(err);
+  console.error("Request Error:", err);
 }
 
 function _onRequestResponse(origin, req, res) {
@@ -170,20 +164,19 @@ function _onRequestResponse(origin, req, res) {
   req.params.originType = origin.headers["content-type"] || "";
   req.params.originSize = parseInt(origin.headers["content-length"] || "0", 10);
 
-  origin.body.on("error", (_) => req.socket.destroy());
+  origin.body.on("error", () => req.socket.destroy());
 
   if (shouldCompress(req)) {
     return compress(req, res, origin);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
-    ["accept-ranges", "content-type", "content-length", "content-range"].forEach(
-      (header) => {
-        if (origin.headers[header]) {
-          res.setHeader(header, origin.headers[header]);
-        }
+    // Forward relevant headers
+    ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
+      if (origin.headers[header]) {
+        res.setHeader(header, origin.headers[header]);
       }
-    );
+    });
 
     return origin.body.pipe(res);
   }
