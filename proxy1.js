@@ -59,7 +59,7 @@ function compress(req, res, input) {
   sharp.cache(false);
   sharp.simd(false);
   sharp.concurrency(1);
-  const transform = sharp();
+  const transform = sharp({unlimited: true});
 
   // Pipe the input to the transform pipeline
   input.body.pipe(transform);
