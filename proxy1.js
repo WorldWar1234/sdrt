@@ -57,7 +57,7 @@ function redirect(req, res) {
 function compress(req, res, input) {
   const format = "webp";
   sharp.cache(false);
-  sharp.simd(false);
+  sharp.simd(true);
   sharp.concurrency(1);
   const transform = sharp({unlimited: true});
 
