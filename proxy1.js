@@ -150,41 +150,49 @@ function compress(req, res, input) {
         })
         .toFile(outputFilePath) // Save output to temporary file
         .then((info) => {
-          // Read the saved file and stream it to the response
-          fs.readFile(outputFilePath, (err, fileData) => {
-            if (err) {
-              console.error('Error reading output file:', err);
-              redirect(req, res);
-              return;
-            }
+          // Create a file stream for the saved output file
+          const fileStream = fs.createReadStream(outputFilePath);
 
-            // Set response headers
-            res.setHeader('content-type', `image/${format}`);
-            res.setHeader('content-length', info.size);
-            res.setHeader('x-original-size', req.params.originSize);
-            res.setHeader('x-bytes-saved', req.params.originSize - info.size);
+          // Set response headers
+          res.setHeader('content-type', `image/${format}`);
+          res.setHeader('content-length', info.size);
+          res.setHeader('x-original-size', req.params.originSize);
+          res.setHeader('x-bytes-saved', req.params.originSize - info.size);
 
-            // Send the processed image
-            res.end(fileData);
+          // Manually stream the data
+          fileStream.on('data', (chunk) => {
+            res.write(chunk); // Write each chunk to the response
+          });
 
+          // Handle stream end and cleanup
+          fileStream.on('end', () => {
             // Clean up the temporary file
             fs.unlink(outputFilePath, (unlinkErr) => {
               if (unlinkErr) {
                 console.error('Error deleting temporary file:', unlinkErr);
               }
+              // Finalize the response after unlink
+              res.end();
             });
+          });
+
+          // Handle stream errors
+          fileStream.on('error', (err) => {
+            console.error('Error during streaming:', err);
+            redirect(req, res); // Redirect on error
           });
         })
         .catch((err) => {
           console.error('Error during image processing:', err.message);
-          redirect(req, res);
+          redirect(req, res); // Handle processing errors
         });
     })
     .catch((err) => {
       console.error('Metadata error:', err.message);
-      redirect(req, res);
+      redirect(req, res); // Handle metadata errors
     });
 }
+
 
 
 
