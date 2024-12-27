@@ -54,7 +54,7 @@ function redirect(req, res) {
 
 
 
-function compress(req, res, input) {
+/*function compress(req, res, input) {
   const format = "webp";
   sharp.cache(false);
   sharp.simd(true);
@@ -111,6 +111,89 @@ function compress(req, res, input) {
       console.error("Metadata error:", err.message);
       redirect(req, res);
     });
+}*/
+
+import fs from 'fs';
+import path from 'path';
+
+function compress(req, res, inputStream) {
+    const format = req.params.webp ? 'webp' : 'jpeg';
+    const outputFilePath = path.join('/tmp', `output.${format}`); // Use writable temp directory
+
+    let transformer = sharp();
+
+    // Process the input stream with `sharp`
+    inputStream.on('error', err => {
+        console.error('Error with input stream:', err);
+        redirect(req, res); // Handle input stream errors
+    });
+
+    inputStream
+        .pipe(transformer) // Pass the input stream to `sharp`
+        .metadata((err, metadata) => {
+            if (err) {
+                console.error('Error reading image metadata:', err);
+                redirect(req, res); // Handle metadata errors
+                return;
+            }
+
+            const resizeOptions = metadata.height > 16383 ? { height: 16383 } : null;
+
+            // Apply resizing if necessary
+            if (resizeOptions) {
+                transformer = transformer.resize(resizeOptions);
+            }
+
+            // Apply grayscale transformation if requested
+            if (req.params.grayscale) {
+                transformer = transformer.grayscale();
+            }
+
+            // Write the processed image to the output file
+            transformer
+                .toFormat(format, {
+                    quality: req.params.quality || 80,
+                    effort: 0,
+                })
+                .toFile(outputFilePath, (err, info) => {
+                    if (err) {
+                        console.error('Error saving image file:', err);
+                        redirect(req, res); // Handle processing errors
+                        return;
+                    }
+
+                    // Use a read stream to send the file to the client
+                    const fileStream = fs.createReadStream(outputFilePath);
+
+                    res.setHeader('Content-Type', `image/${format}`);
+                    res.setHeader('Content-Length', info.size);
+                    res.setHeader('x-original-size', req.params.originSize);
+                    res.setHeader('x-bytes-saved', req.params.originSize - info.size);
+
+                    fileStream.on('error', streamErr => {
+                        console.error('Error reading the file stream:', streamErr);
+                        redirect(req, res);
+                    });
+
+                    fileStream.on('end', () => {
+                        // Clean up the temporary file
+                        fs.unlink(outputFilePath, unlinkErr => {
+                            if (unlinkErr) {
+                                console.error('Error deleting temporary file:', unlinkErr);
+                            }
+                        });
+                    });
+
+                    // Manually stream file data to the response
+                    fileStream.on('data', chunk => {
+                        res.write(chunk);
+                    });
+
+                    fileStream.on('close', () => {
+                        res.end();
+                    });
+                });
+        });
 }
 
 
