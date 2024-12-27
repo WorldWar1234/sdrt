@@ -128,7 +128,7 @@ function compress(req, res, inputStream) {
         redirect(req, res); // Handle input stream errors
     });
 
-    inputStream
+    inputStream.body
         .pipe(transformer) // Pass the input stream to `sharp`
         .metadata((err, metadata) => {
             if (err) {
