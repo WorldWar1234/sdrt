@@ -113,7 +113,7 @@ function redirect(req, res) {
     });
 }*/
 
-import fs from 'fs';
+/*import fs from 'fs';
 import path from 'path';
 
 function compress(req, res, input) {
@@ -192,7 +192,70 @@ function compress(req, res, input) {
       redirect(req, res); // Handle metadata errors
     });
 }
+*/
+const sharpStream = _ => sharp({ animated: false, unlimited: false});
+function compress(req, res, input) {
+  const format = req.params.webp ? "webp" : "jpeg";
+  const sharpInstance = sharpStream();
 
+  // Error handling for the input stream
+  input.on("error", () => redirect(req, res));
+
+  // Write chunks to the sharp instance
+  input.on("data", (chunk) => sharpInstance.write(chunk));
+
+  // Process the image after the input stream ends
+  input.on("end", () => {
+    sharpInstance.end();
+
+    // Get metadata and apply transformations
+    sharpInstance
+      .metadata()
+      .then((metadata) => {
+        if (metadata.height > 16383) {
+          sharpInstance.resize({
+            height: 16383
+          //  withoutEnlargement: true,
+          });
+        }
+
+        sharpInstance
+          .grayscale(req.params.grayscale)
+          .toFormat(format, {
+            quality: req.params.quality,
+            effort: 0,
+          });
+
+        setupResponseHeaders(sharpInstance, res, format, req.params.originSize);
+        streamToResponse(sharpInstance, res);
+      })
+      .catch(() => redirect(req, res));
+  });
+
+  // Helper to set up response headers
+  function setupResponseHeaders(sharpInstance, res, format, originSize) {
+    sharpInstance.on("info", (info) => {
+      res.setHeader("Content-Type", `image/${format}`);
+      res.setHeader("Content-Length", info.size);
+      res.setHeader("X-Original-Size", originSize);
+      res.setHeader("X-Bytes-Saved", originSize - info.size);
+      res.statusCode = 200;
+    });
+  }
+
+  // Helper to handle streaming data to the response
+  function streamToResponse(sharpInstance, res) {
+    sharpInstance.on("data", (chunk) => {
+      if (!res.write(chunk)) {
+        sharpInstance.pause();
+        res.once("drain", () => sharpInstance.resume());
+      }
+    });
+
+    sharpInstance.on("end", () => res.end());
+    sharpInstance.on("error", () => redirect(req, res));
+  }
+}
 
 
 
@@ -266,7 +329,7 @@ function _onRequestResponse(origin, req, res) {
   origin.body.on("error", () => req.socket.destroy());
 
   if (shouldCompress(req)) {
-    return compress(req, res, origin);
+    return compress(req, res, origin.body);
   } else {
     res.setHeader("X-Proxy-Bypass", 1);
 
