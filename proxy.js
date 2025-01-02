@@ -40,7 +40,7 @@ function compress(req, res, inputStream) {
     .metadata()
     .then((metadata) => {
       if (metadata.height > 16383) {
-        sharpInstance.resize({ height: 16383 });
+        sharpInstance.resize({ height: 16383, withoutEnlargement: true });
       }
 
       if (req.params.grayscale) {
