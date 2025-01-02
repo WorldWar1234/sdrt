@@ -42,71 +42,78 @@ function shouldCompress(req) {
 
 import fs from 'fs';
 import path from 'path';
-// Function to compress the image and send it directly in the response
-function compress(req, res, inputStream) {
-  const format = req.params.webp ? 'webp' : 'jpeg';
 
-  // Generate a unique temporary file path in /tmp
-  const outputPath = path.join('/tmp', `compressed-${Date.now()}.${format}`);
+function compress(req, res, input) {
+  const format = req.params.webp ? "webp" : "jpeg"; // Format based on params
+  const tempFilePath = path.join('/tmp', `output.${format}`); // Temporary file path
 
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
-  // Pipe the input stream to sharp for processing
-  inputStream.pipe(sharpInstance);
+  // Error handling for the input stream
+  //input.on("error", () => redirect(req, res)); // Redirect if input stream fails
 
+  // Pipe the input stream directly to sharp
+  input.pipe(sharpInstance);
+
+  // Process the image after the input stream ends
   sharpInstance
     .metadata()
     .then((metadata) => {
+      // Resize if height exceeds the limit
       if (metadata.height > 16383) {
-        // Resize image only if the height is greater than the limit, without enlarging
         sharpInstance.resize({ height: 16383 });
       }
 
+      // Apply grayscale if requested
       if (req.params.grayscale) {
         sharpInstance.grayscale();
       }
 
-      // Process the image and write it to the temporary output file
-      sharpInstance
-        .toFormat(format, { quality: req.params.quality })
-        .toFile(outputPath, (err, info) => {
-          if (err || !info || res.headersSent) {
-            console.error('Compression error or headers already sent:', err?.message);
-            return redirect(req, res);
+      // Set format, quality, and compression level
+      return sharpInstance
+        .toFormat(format, {
+          quality: req.params.quality || 80, // Default quality 80
+          effort: 0, // Balance performance and compression
+        })
+        .toFile(tempFilePath); // Save to a temporary file
+    })
+    .then((info) => {
+      // Set response headers
+      res.setHeader("Content-Type", `image/${format}`);
+      res.setHeader("Content-Length", info.size);
+      res.setHeader("X-Original-Size", req.params.originSize);
+      res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
+      res.statusCode = 200;
+
+      // Create a read stream from the temporary file
+      const readStream = fs.createReadStream(tempFilePath);
+
+      readStream.on('error', (err) => {
+        console.error('Error reading temporary file:', err);
+        redirect(req, res); // Handle reading errors
+      });
+
+      readStream.on('end', () => {
+        
+        // Clean up the temporary file after sending the response
+        fs.unlink(tempFilePath, (err) => {
+          if (err) {
+            console.error('Error deleting temporary file:', err);
           }
-
-          // Set response headers
-          res.setHeader('content-type', `image/${format}`);
-          res.setHeader('content-length', info.size);
-          res.setHeader('x-original-size', req.params.originSize);
-          res.setHeader('x-bytes-saved', req.params.originSize - info.size);
-
-          // Create a read stream from the output file and send it in the response
-          const outputStream = fs.createReadStream(outputPath);
-
-          outputStream.on('error', (streamErr) => {
-            console.error('Stream error:', streamErr.message);
-            redirect(req, res);
-          });
-
-          outputStream.on('end', () => {
-            // Delete the temporary file after sending
-            fs.unlink(outputPath, (unlinkErr) => {
-              if (unlinkErr) {
-                console.error('Error deleting temporary file:', unlinkErr.message);
-              }
-            });
-          });
-
-          outputStream.pipe(res);
         });
+        res.end(); // Signal that we've finished writing data to the response
+      });
+
+      // Write data from the read stream to the response as it comes in
+      readStream.on('data', (chunk) => {
+        res.write(chunk);
+      });
     })
     .catch((err) => {
-      console.error('Metadata error:', err.message);
-      redirect(req, res);
+      console.error('Error during image processing:', err.message);
+      redirect(req, res); // Handle processing errors
     });
 }
-
 
 /*import fs from 'fs';
 import path from 'path';
