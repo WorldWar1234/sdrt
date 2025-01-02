@@ -28,7 +28,7 @@ function shouldCompress(req) {
 
 
 // Function to compress the image and send it directly in the response
-function compress(req, res, inputStream) {
+/*function compress(req, res, inputStream) {
   const format = req.params.webp ? "webp" : "jpeg";
 
   const sharpInstance = sharp({ unlimited: true, animated: false });
@@ -68,7 +68,86 @@ function compress(req, res, inputStream) {
       console.error('Metadata error:', err.message);
       redirect(req, res);
     });
+}*/
+
+
+import fs from 'fs';
+import path from 'path';
+
+function compress(req, res, input) {
+  const format = req.params.webp ? "webp" : "jpeg"; // Format based on params
+  const tempFilePath = path.join('/tmp', `output.${format}`); // Temporary file path
+
+  const sharpInstance = sharp({ unlimited: true, animated: false });
+
+  // Handle input stream errors
+  input.on("error", () => redirect(req, res));
+
+  // Write chunks to the sharp instance
+  input.on("data", (chunk) => sharpInstance.write(chunk));
+
+  // Process image after input ends
+  input.on("end", () => {
+    sharpInstance.end();
+
+    sharpInstance
+      .metadata()
+      .then((metadata) => {
+        // Resize if height exceeds the limit
+        if (metadata.height > 16383) {
+          sharpInstance.resize({ height: 16383 });
+        }
+
+        // Apply grayscale if requested
+        if (req.params.grayscale) {
+          sharpInstance.grayscale();
+        }
+
+        // Format and save to the temporary file
+        sharpInstance
+          .toFormat(format, {
+            quality: req.params.quality || 80, // Default quality 80
+            effort: 0, // Balance performance and compression
+          })
+          .toFile(tempFilePath) // Write directly to a temp file
+          .then((info) => {
+            // Set response headers
+            res.setHeader("Content-Type", `image/${format}`);
+            res.setHeader("Content-Length", info.size);
+            res.setHeader("X-Original-Size", req.params.originSize);
+            res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
+            res.statusCode = 200;
+
+            // Directly stream the file to the response
+            fs.readFile(tempFilePath, (err, data) => {
+              if (err) {
+                console.error("Error reading temporary file:", err);
+                redirect(req, res); // Redirect on file read error
+              } else {
+                res.write(data); // Write the file data to the response
+                res.end(); // End the response
+
+                // Delete the temporary file
+                fs.unlink(tempFilePath, (unlinkErr) => {
+                  if (unlinkErr) {
+                    console.error("Error deleting temporary file:", unlinkErr);
+                  }
+                });
+              }
+            });
+          })
+          .catch((err) => {
+            console.error("Error during image processing:", err.message);
+            redirect(req, res); // Handle sharp processing errors
+          });
+      })
+      .catch(() => {
+        console.error("Error fetching metadata");
+        redirect(req, res); // Handle metadata errors
+      });
+  });
 }
+
 
 
 
