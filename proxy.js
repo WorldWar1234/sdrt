@@ -41,7 +41,7 @@ function shouldCompress(req) {
 
 
 // Function to compress the image and send it directly in the response
-import fs from 'fs';
+/*import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -110,10 +110,11 @@ function compress(req, res, inputStream) {
       redirect(req, res);
     });
 }
+*/
 
-
-/*import fs from 'fs';
+import fs from 'fs';
 import path from 'path';
+
 
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg"; // Format based on params
@@ -121,16 +122,17 @@ function compress(req, res, input) {
 
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
-  // Handle input stream errors
-  input.on("error", () => redirect(req, res));
+  // Error handling for the input stream
+  input.on("error", () => redirect(req, res)); // Redirect if input stream fails
 
-  // Write chunks to the sharp instance
+  // Write chunks of input to sharp instance
   input.on("data", (chunk) => sharpInstance.write(chunk));
 
-  // Process image after input ends
+  // Process the image after the input stream ends
   input.on("end", () => {
     sharpInstance.end();
 
+    // Fetch metadata and apply transformations
     sharpInstance
       .metadata()
       .then((metadata) => {
@@ -144,13 +146,15 @@ function compress(req, res, input) {
           sharpInstance.grayscale();
         }
 
-        // Format and save to the temporary file
+        // Set format, quality, and compression level
         sharpInstance
           .toFormat(format, {
             quality: req.params.quality || 80, // Default quality 80
             effort: 0, // Balance performance and compression
           })
-          .toFile(tempFilePath) // Write directly to a temp file
+          .toFile(tempFilePath) // Save to a temporary file
+
+          // After the image is written to the temporary file, stream it to the response
           .then((info) => {
             // Set response headers
             res.setHeader("Content-Type", `image/${format}`);
@@ -159,39 +163,33 @@ function compress(req, res, input) {
             res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
             res.statusCode = 200;
 
-            // Directly stream the file to the response
-            fs.readFile(tempFilePath, (err, data) => {
-              if (err) {
-                console.error("Error reading temporary file:", err);
-                redirect(req, res); // Redirect on file read error
-              } else {
-                res.write(data); // Write the file data to the response
-                res.end(); // End the response
+            // Create a file stream and pipe it to the response
+            const fileStream = fs.createReadStream(tempFilePath);
 
-                // Delete the temporary file
-                fs.unlink(tempFilePath, (unlinkErr) => {
-                  if (unlinkErr) {
-                    console.error("Error deleting temporary file:", unlinkErr);
-                  }
-                });
-              }
+            fileStream.on('error', () => redirect(req, res)); // Handle file stream errors
+
+            fileStream.pipe(res); // Directly stream the file to the response
+
+            // Clean up the temporary file after the response ends
+            fileStream.on('end', () => {
+              fs.unlink(tempFilePath, (err) => {
+                if (err) {
+                  console.error('Error deleting temporary file:', err);
+                }
+              });
             });
           })
           .catch((err) => {
-            console.error("Error during image processing:", err.message);
-            redirect(req, res); // Handle sharp processing errors
+            console.error('Error during image processing:', err.message);
+            redirect(req, res); // Handle processing errors
           });
       })
       .catch(() => {
-        console.error("Error fetching metadata");
+        console.error('Error fetching metadata');
         redirect(req, res); // Handle metadata errors
       });
   });
-}*/
-
-
-
-
+}
 
 
 // Function to handle the request
