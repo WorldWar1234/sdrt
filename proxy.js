@@ -1,23 +1,18 @@
-"use strict";
-
-import http from "http";
-import https from "https";
 import sharp from "sharp";
-import { availableParallelism } from 'os';
-import pick from "./pick.js";
+import { request } from "undici";
+// Constants
+const DEFAULT_QUALITY = 80;
+const MIN_TRANSPARENT_COMPRESS_LENGTH = 50000;
+const MIN_COMPRESS_LENGTH = 10000;
 
-const DEFAULT_QUALITY = 40;
-const MIN_COMPRESS_LENGTH = 1024;
-const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
-// Helper: Should compress
-function shouldCompress(ctx) {
-  const { originType, originSize, webp } = ctx.params;
+// Function to determine if compression is needed
+function shouldCompress(req) {
+  const { originType, originSize, webp } = req.params;
 
   if (!originType.startsWith("image")) return false;
-  if (originSize === 0) return false;
-  if (ctx.headers.range) return false;
-  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
+  if (originSize === 0 || req.headers.range) return false;
+
   if (
     !webp &&
     (originType.endsWith("png") || originType.endsWith("gif")) &&
@@ -26,151 +21,111 @@ function shouldCompress(ctx) {
     return false;
   }
 
+  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
+
   return true;
 }
 
-// Helper: Copy headers
-function copyHeaders(source, target) {
-  for (const [key, value] of Object.entries(source.headers)) {
-    try {
-      target.setHeader(key, value);
-    } catch (e) {
-      console.log(e.message);
-    }
+
+// Function to compress the image and send it directly in the response
+function compress(req, res, inputStream) {
+  const format = req.params.webp ? "webp" : "jpeg";
+
+  const sharpInstance = sharp({ unlimited: true, animated: false });
+
+  // Pipe the input stream to sharp for processing
+  inputStream.pipe(sharpInstance);
+
+  sharpInstance
+    .metadata()
+    .then((metadata) => {
+      if (metadata.height > 16383) {
+        sharpInstance.resize({ height: 16383 });
+      }
+
+      if (req.params.grayscale) {
+        sharpInstance.grayscale();
+      }
+
+      // Process the image into a buffer
+      sharpInstance.toFormat(format, { quality: req.params.quality }).toBuffer((err, output, info) => {
+        if (err || !info || res.headersSent) {
+          console.error('Compression error or headers already sent.');
+          return redirect(req, res);
+        }
+
+        // Set response headers
+        res.setHeader('content-type', `image/${format}`);
+        res.setHeader('content-length', info.size);
+        res.setHeader('x-original-size', req.params.originSize);
+        res.setHeader('x-bytes-saved', req.params.originSize - info.size);
+
+        // Send the processed image
+        res.status(200).send(output);
+      });
+    })
+    .catch((err) => {
+      console.error('Metadata error:', err.message);
+      redirect(req, res);
+    });
+}
+
+
+
+
+
+// Function to handle the request
+function handleRequest(req, res, origin) {
+  if (shouldCompress(req)) {
+    compress(req, res, origin.data);
+  } else {
+    res.setHeader("X-Proxy-Bypass", 1);
+
+    ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
+      if (origin.headers[header]) {
+        res.setHeader(header, origin.headers[header]);
+      }
+    });
+
+    origin.data.pipe(res);
   }
 }
 
-// Helper: Redirect
-function redirect(ctx) {
-  if (ctx.response.headersSent) return;
 
-  ctx.set("content-length", 0);
-  ctx.remove("cache-control");
-  ctx.remove("expires");
-  ctx.remove("date");
-  ctx.remove("etag");
-  ctx.set("location", encodeURI(ctx.params.url));
-  ctx.status = 302;
-  ctx.body = null;
-}
 
-// Helper: Compress
-function compress(ctx, input) {
-  const format = "jpeg";
-
-  sharp.cache(false);
-  sharp.simd(true);
-  sharp.concurrency(availableParallelism());
-
-  const sharpInstance = sharp({
-    unlimited: true,
-    failOn: "none",
-    limitInputPixels: false,
-  });
-
-  input
-    .pipe(
-      sharpInstance
-        .resize(null, 16383, {
-          withoutEnlargement: true
-        })
-        .grayscale(ctx.params.grayscale)
-        .toFormat(format, {
-          quality: ctx.params.quality,
-          chromaSubsampling: '4:4:4',
-          effort: 0,
-        })
-        .on("error", () => redirect(ctx))
-        .on("info", (info) => {
-          if (ctx.response.headersSent) return;
-          ctx.set("content-type", "image/" + format);
-          ctx.set("content-length", info.size);
-          ctx.set("x-original-size", ctx.params.originSize);
-          ctx.set("x-bytes-saved", ctx.params.originSize - info.size);
-          ctx.status = 200;
-        })
-    )
-    .pipe(ctx.res);
-}
-
-// Main: Proxy middleware
-async function proxy(ctx, next) {
-  // Extract and validate parameters from the request
-  let url = ctx.query.url;
-  if (!url) return ctx.body = "bandwidth-hero-proxy";
-
-  ctx.params = {};
-  ctx.params.url = decodeURIComponent(url);
-  ctx.params.webp = !ctx.query.jpeg;
-  ctx.params.grayscale = ctx.query.bw != 0;
-  ctx.params.quality = parseInt(ctx.query.l, 10) || DEFAULT_QUALITY;
-
-  // Avoid loopback that could cause server hang.
-  if (
-    ctx.headers["via"] === "1.1 bandwidth-hero" &&
-    ["127.0.0.1", "::1"].includes(ctx.headers["x-forwarded-for"] || ctx.ip)
-  ) {
-    return redirect(ctx);
+export async function fetchImageAndHandle(req, res) {
+  const url = req.query.url;
+  if (!url) {
+    return res.send("bandwidth-hero-proxy");
   }
 
-  const parsedUrl = new URL(ctx.params.url);
-  const options = {
-    headers: {
-      ...pick(ctx.headers, ["cookie", "dnt", "referer", "range"]),
-      "user-agent": "Bandwidth-Hero Compressor",
-      "x-forwarded-for": ctx.headers["x-forwarded-for"] || ctx.ip,
-      via: "1.1 bandwidth-hero",
-    },
-    method: 'GET',
-    rejectUnauthorized: false // Disable SSL verification
+  req.params = {
+    url: decodeURIComponent(url),
+    webp: !req.query.jpeg,
+    grayscale: req.query.bw != 0,
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  const requestModule = parsedUrl.protocol === 'https:' ? https : http;
+  try {
+    const { statusCode, headers, body } = await request(req.params.url);
 
-  const originReq = requestModule.request(parsedUrl, options, (originRes) => {
-    // Handle non-2xx or redirect responses.
-    if (
-      originRes.statusCode >= 400 ||
-      (originRes.statusCode >= 300 && originRes.headers.location)
-    ) {
-      return redirect(ctx);
+    if (statusCode >= 400) {
+      res.statusCode = statusCode;
+      return res.end("Failed to fetch the image.");
     }
 
-    // Set headers and stream response.
-    copyHeaders(originRes, ctx.res);
-    ctx.set("content-encoding", "identity");
-    ctx.set("Access-Control-Allow-Origin", "*");
-    ctx.set("Cross-Origin-Resource-Policy", "cross-origin");
-    ctx.set("Cross-Origin-Embedder-Policy", "unsafe-none");
-    ctx.params.originType = originRes.headers["content-type"] || "";
-    ctx.params.originSize = originRes.headers["content-length"] || "0";
+    req.params.originType = headers["content-type"];
+    req.params.originSize = parseInt(headers["content-length"], 10) || 0;
 
-    if (shouldCompress(ctx)) {
-      return compress(ctx, originRes);
-    } else {
-      ctx.set("x-proxy-bypass", 1);
-      ["accept-ranges", "content-type", "content-length", "content-range"].forEach((header) => {
-        if (originRes.headers[header]) {
-          ctx.set(header, originRes.headers[header]);
-        }
-      });
-      return originRes.pipe(ctx.res);
-    }
-  });
+    const origin = {
+      headers,
+      data: body,
+    };
 
-  originReq.on('error', (err) => {
-    if (err.code === 'ERR_INVALID_URL') {
-      if (!ctx.response.headersSent) {
-        ctx.status = 400;
-        ctx.body = "Invalid URL";
-      }
-    } else {
-      redirect(ctx);
-    }
-    console.error(err);
-  });
-
-  originReq.end();
+    handleRequest(req, res, origin);
+  } catch (error) {
+    console.error("Error fetching image:", error.message);
+    res.statusCode = 500;
+    res.end("Failed to fetch the image.");
+  }
 }
-
-export default proxy;
