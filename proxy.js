@@ -5,6 +5,19 @@ const DEFAULT_QUALITY = 80;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = 50000;
 const MIN_COMPRESS_LENGTH = 10000;
 
+function redirect(req, res) {
+  if (res.headersSent) {
+    return;
+  }
+
+  res.setHeader('content-length', 0);
+  res.removeHeader('cache-control');
+  res.removeHeader('expires');
+  res.removeHeader('date');
+  res.removeHeader('etag');
+  res.setHeader('location', encodeURI(req.params.url));
+  res.status(302).end();
+}
 
 // Function to determine if compression is needed
 function shouldCompress(req) {
@@ -28,8 +41,17 @@ function shouldCompress(req) {
 
 
 // Function to compress the image and send it directly in the response
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+
+// Function to compress the image and send it directly in the response
 function compress(req, res, inputStream) {
-  const format = req.params.webp ? "webp" : "jpeg";
+  const format = req.params.webp ? 'webp' : 'jpeg';
+
+  // Generate a unique temporary file path
+  const outputPath = path.join(os.tmpdir(), `compressed-${Date.now()}.${format}`);
 
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
@@ -40,6 +62,7 @@ function compress(req, res, inputStream) {
     .metadata()
     .then((metadata) => {
       if (metadata.height > 16383) {
+        // Resize image only if the height is greater than the limit, without enlarging
         sharpInstance.resize({ height: 16383, withoutEnlargement: true });
       }
 
@@ -47,21 +70,40 @@ function compress(req, res, inputStream) {
         sharpInstance.grayscale();
       }
 
-      // Process the image into a buffer
-      sharpInstance.toFormat(format, { quality: req.params.quality }).toBuffer((err, output, info) => {
-        if (err || !info || res.headersSent) {
-          console.error('Compression error or headers already sent.');
-          return redirect(req, res);
-        }
+      // Process the image and write it to the temporary output file
+      sharpInstance
+        .toFormat(format, { quality: req.params.quality })
+        .toFile(outputPath, (err, info) => {
+          if (err || !info || res.headersSent) {
+            console.error('Compression error or headers already sent:', err?.message);
+            return redirect(req, res);
+          }
 
-        // Set response headers
-        res.setHeader('content-type', `image/${format}`);
-        res.setHeader('content-length', info.size);
-        res.setHeader('x-original-size', req.params.originSize);
-        res.setHeader('x-bytes-saved', req.params.originSize - info.size);
-        res.write(output);
-        res.end();
-      });
+          // Set response headers
+          res.setHeader('content-type', `image/${format}`);
+          res.setHeader('content-length', info.size);
+          res.setHeader('x-original-size', req.params.originSize);
+          res.setHeader('x-bytes-saved', req.params.originSize - info.size);
+
+          // Create a read stream from the output file and send it in the response
+          const outputStream = fs.createReadStream(outputPath);
+
+          outputStream.on('error', (streamErr) => {
+            console.error('Stream error:', streamErr.message);
+            redirect(req, res);
+          });
+
+          outputStream.on('end', () => {
+            // Delete the temporary file after sending
+            fs.unlink(outputPath, (unlinkErr) => {
+              if (unlinkErr) {
+                console.error('Error deleting temporary file:', unlinkErr.message);
+              }
+            });
+          });
+
+          outputStream.pipe(res);
+        });
     })
     .catch((err) => {
       console.error('Metadata error:', err.message);
