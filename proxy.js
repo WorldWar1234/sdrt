@@ -40,18 +40,14 @@ function shouldCompress(req) {
 }
 
 
-// Function to compress the image and send it directly in the response
-/*import fs from 'fs';
-import os from 'os';
+import fs from 'fs';
 import path from 'path';
-
-
 // Function to compress the image and send it directly in the response
 function compress(req, res, inputStream) {
   const format = req.params.webp ? 'webp' : 'jpeg';
 
-  // Generate a unique temporary file path
-  const outputPath = path.join(os.tmpdir(), `compressed-${Date.now()}.${format}`);
+  // Generate a unique temporary file path in /tmp
+  const outputPath = path.join('/tmp', `compressed-${Date.now()}.${format}`);
 
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
@@ -63,7 +59,7 @@ function compress(req, res, inputStream) {
     .then((metadata) => {
       if (metadata.height > 16383) {
         // Resize image only if the height is greater than the limit, without enlarging
-        sharpInstance.resize({ height: 16383, withoutEnlargement: true });
+        sharpInstance.resize({ height: 16383 });
       }
 
       if (req.params.grayscale) {
@@ -110,9 +106,9 @@ function compress(req, res, inputStream) {
       redirect(req, res);
     });
 }
-*/
 
-import fs from 'fs';
+
+/*import fs from 'fs';
 import path from 'path';
 
 
@@ -189,7 +185,7 @@ function compress(req, res, input) {
         redirect(req, res); // Handle metadata errors
       });
   });
-}
+}*/
 
 
 // Function to handle the request
