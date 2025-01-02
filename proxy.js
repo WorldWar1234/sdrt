@@ -28,7 +28,7 @@ function shouldCompress(req) {
 
 
 // Function to compress the image and send it directly in the response
-/*function compress(req, res, inputStream) {
+function compress(req, res, inputStream) {
   const format = req.params.webp ? "webp" : "jpeg";
 
   const sharpInstance = sharp({ unlimited: true, animated: false });
@@ -59,19 +59,18 @@ function shouldCompress(req) {
         res.setHeader('content-length', info.size);
         res.setHeader('x-original-size', req.params.originSize);
         res.setHeader('x-bytes-saved', req.params.originSize - info.size);
-
-        // Send the processed image
-        res.status(200).send(output);
+        res.write(output);
+        res.end();
       });
     })
     .catch((err) => {
       console.error('Metadata error:', err.message);
       redirect(req, res);
     });
-}*/
+}
 
 
-import fs from 'fs';
+/*import fs from 'fs';
 import path from 'path';
 
 function compress(req, res, input) {
@@ -146,7 +145,7 @@ function compress(req, res, input) {
         redirect(req, res); // Handle metadata errors
       });
   });
-}
+}*/
 
 
 
