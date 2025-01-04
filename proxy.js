@@ -106,7 +106,7 @@ function compress(req, res, input) {
 
       // Write data from the read stream to the response as it comes in
       readStream.on('data', (chunk) => {
-        res.write(chunk);
+        res.send(chunk);
       });
     })
     .catch((err) => {
