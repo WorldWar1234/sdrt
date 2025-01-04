@@ -1,5 +1,8 @@
 import sharp from "sharp";
 import { request } from "undici";
+import fs from 'fs';
+import path from 'path';
+
 // Constants
 const DEFAULT_QUALITY = 80;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = 50000;
@@ -40,8 +43,6 @@ function shouldCompress(req) {
 }
 
 
-import fs from 'fs';
-import path from 'path';
 
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg"; // Format based on params
@@ -49,71 +50,73 @@ function compress(req, res, input) {
 
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
-  // Error handling for the input stream
-  //input.on("error", () => redirect(req, res)); // Redirect if input stream fails
+  // Handle input stream errors
+  input.on("error", () => redirect(req, res));
 
-  // Pipe the input stream directly to sharp
-  input.pipe(sharpInstance);
+  // Write chunks to the sharp instance
+  input.on("data", (chunk) => sharpInstance.write(chunk));
 
-  // Process the image after the input stream ends
-  sharpInstance
-    .metadata()
-    .then((metadata) => {
-      // Resize if height exceeds the limit
-      if (metadata.height > 16383) {
-        sharpInstance.resize({ height: 16383 });
-      }
+  // Process image after input ends
+  input.on("end", () => {
+    sharpInstance.end();
 
-      // Apply grayscale if requested
-      if (req.params.grayscale) {
-        sharpInstance.grayscale();
-      }
+    sharpInstance
+      .metadata()
+      .then((metadata) => {
+        // Resize if height exceeds the limit
+        if (metadata.height > 16383) {
+          sharpInstance.resize({ height: 16383 });
+        }
 
-      // Set format, quality, and compression level
-      return sharpInstance
-        .toFormat(format, {
+        // Apply grayscale if requested
+        if (req.params.grayscale) {
+          sharpInstance.grayscale();
+        }
+
+        // Format and save to the temporary file
+        sharpInstance.toFormat(format, {
           quality: req.params.quality || 80, // Default quality 80
           effort: 0, // Balance performance and compression
-        })
-        .toFile(tempFilePath); // Save to a temporary file
-    })
-    .then((info) => {
-      // Set response headers
-      res.setHeader("Content-Type", `image/${format}`);
-      res.setHeader("Content-Length", info.size);
-      res.setHeader("X-Original-Size", req.params.originSize);
-      res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
-      res.statusCode = 200;
-
-      // Create a read stream from the temporary file
-      const readStream = fs.createReadStream(tempFilePath);
-
-      readStream.on('error', (err) => {
-        console.error('Error reading temporary file:', err);
-        redirect(req, res); // Handle reading errors
-      });
-
-      readStream.on('end', () => {
-        
-        // Clean up the temporary file after sending the response
-        fs.unlink(tempFilePath, (err) => {
+        }).toFile(tempFilePath, (err, info) => {
           if (err) {
-            console.error('Error deleting temporary file:', err);
+            console.error("Error during image processing:", err.message);
+            redirect(req, res); // Handle sharp processing errors
+            return;
           }
-        });
-        res.end(); // Signal that we've finished writing data to the response
-      });
 
-      // Write data from the read stream to the response as it comes in
-      readStream.on('data', (chunk) => {
-        res.send(chunk);
+          // Set response headers
+          res.setHeader("Content-Type", `image/${format}`);
+          res.setHeader("Content-Length", info.size);
+          res.setHeader("X-Original-Size", req.params.originSize);
+          res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
+          res.statusCode = 200;
+
+          // Directly stream the file to the response
+          fs.readFile(tempFilePath, (readErr, data) => {
+            if (readErr) {
+              console.error("Error reading temporary file:", readErr);
+              redirect(req, res); // Redirect on file read error
+            } else {
+              res.send(data); // Write the file data to the response
+              res.end(); // End the response
+
+              // Delete the temporary file
+              fs.unlink(tempFilePath, (unlinkErr) => {
+                if (unlinkErr) {
+                  console.error("Error deleting temporary file:", unlinkErr);
+                }
+              });
+            }
+          });
+        });
+      })
+      .catch(() => {
+        console.error("Error fetching metadata");
+        redirect(req, res); // Handle metadata errors
       });
-    })
-    .catch((err) => {
-      console.error('Error during image processing:', err.message);
-      redirect(req, res); // Handle processing errors
-    });
+  });
 }
+
 
 /*import fs from 'fs';
 import path from 'path';
