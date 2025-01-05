@@ -103,10 +103,12 @@ function shouldCompress(req) {
 */
 
 
+
+import { PassThrough } from "stream";
+
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg"; // Output format
   const quality = req.params.quality || 80; // Compression quality
-  const tempFilePath = path.join("/tmp", `output.${format}`); // Temporary file path
 
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
@@ -122,7 +124,6 @@ function compress(req, res, input) {
   input.on("end", () => {
     sharpInstance.end();
 
-    // Process image metadata and transformation
     sharpInstance
       .metadata()
       .then((metadata) => {
@@ -136,16 +137,16 @@ function compress(req, res, input) {
           sharpInstance.grayscale();
         }
 
-        // Process image and save to file
+        // Process the image in memory
         sharpInstance
           .toFormat(format, {
             quality, // Set compression quality
             effort: 0, // Optimize for speed
           })
-          .toFile(tempFilePath, (err, info) => {
+          .toBuffer((err, buffer, info) => {
             if (err) {
-              console.error("Error writing temporary file:", err.message);
-              redirect(req, res); // Handle processing errors
+              console.error("Error during image processing:", err.message);
+              redirect(req, res);
               return;
             }
 
@@ -159,29 +160,21 @@ function compress(req, res, input) {
             res.setHeader("X-Bytes-Saved", bytesSaved > 0 ? bytesSaved : 0);
             res.statusCode = 200;
 
-            // Stream the file to the client
-            const readStream = fs.createReadStream(tempFilePath);
-            readStream.pipe(res);
+            // Stream the buffer directly to the client
+            const bufferStream = new PassThrough();
+            bufferStream.end(buffer); // Pass the buffer to the stream
+            bufferStream.pipe(res);
 
-            // Handle errors in the read stream
-            readStream.on("error", (streamErr) => {
-              console.error("Error streaming file:", streamErr.message);
+            // Handle streaming errors
+            bufferStream.on("error", (streamErr) => {
+              console.error("Error streaming buffer:", streamErr.message);
               redirect(req, res);
-            });
-
-            // Clean up the temporary file after the response ends
-            readStream.on("close", () => {
-              fs.unlink(tempFilePath, (unlinkErr) => {
-                if (unlinkErr) {
-                  console.error("Error deleting temporary file:", unlinkErr.message);
-                }
-              });
             });
           });
       })
       .catch((err) => {
         console.error("Error fetching metadata:", err.message);
-        redirect(req, res); // Handle metadata errors
+        redirect(req, res);
       });
   });
 }
