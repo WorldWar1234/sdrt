@@ -43,7 +43,7 @@ function shouldCompress(req) {
 }
 
 
-function compress(req, res, input) {
+/*function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg"; // Determine the output format
   const quality = req.params.quality || 80; // Default quality
   const sharpInstance = sharp({ unlimited: true, animated: false });
@@ -90,6 +90,64 @@ function compress(req, res, input) {
           res.setHeader("X-Processed-Size", info.size);
         })
         .pipe(res)
+        .on("error", (err) => {
+          console.error("Error during image processing:", err.message);
+          redirect(req, res); // Handle streaming errors
+        });
+    })
+    .catch((err) => {
+      console.error("Error fetching metadata:", err.message);
+      redirect(req, res); // Handle metadata errors
+    });
+}*/
+
+function compress(req, res, input) {
+  const format = req.params.webp ? "webp" : "jpeg"; // Determine the output format
+  const quality = req.params.quality || 80; // Default quality
+  const sharpInstance = sharp({ unlimited: true, animated: false });
+
+  // Handle input stream errors
+  input.on("error", (err) => {
+    console.error("Input stream error:", err.message);
+    redirect(req, res);
+  });
+
+  // Pipe the input stream to the sharp instance for initial processing
+  input.pipe(sharpInstance);
+
+  // Process the image with sharp
+  sharpInstance
+    .metadata()
+    .then((metadata) => {
+      // Resize if height exceeds the limit
+      if (metadata.height > 16383) {
+        sharpInstance.resize({ height: 16383 });
+      }
+
+      // Apply grayscale if requested
+      if (req.params.grayscale) {
+        sharpInstance.grayscale();
+      }
+
+      // Set preliminary response headers
+      res.setHeader("Content-Type", `image/${format}`);
+      res.setHeader("X-Original-Size", req.params.originSize || metadata.size);
+
+      // Pipe processed image to response with additional headers
+      sharpInstance
+        .toFormat(format, {
+          quality, // Set compression quality
+          effort: 0, // Optimize for speed
+        })
+        .on("info", (info) => {
+          // Set additional headers after processing starts
+          const originalSize = parseInt(req.params.originSize, 10) || metadata.size || 0;
+          const bytesSaved = originalSize - info.size;
+
+          res.setHeader("X-Bytes-Saved", bytesSaved > 0 ? bytesSaved : 0);
+          res.setHeader("X-Processed-Size", info.size);
+        })
+        .pipe(res) // Directly pipe the processed output to the response stream
         .on("error", (err) => {
           console.error("Error during image processing:", err.message);
           redirect(req, res); // Handle streaming errors
