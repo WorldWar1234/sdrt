@@ -43,7 +43,7 @@ function shouldCompress(req) {
 }
 
 
-/*function compress(req, res, input) {
+function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg"; // Determine the output format
   const quality = req.params.quality || 80; // Default quality
   const sharpInstance = sharp({ unlimited: true, animated: false });
@@ -100,76 +100,8 @@ function shouldCompress(req) {
       redirect(req, res); // Handle metadata errors
     });
 }
-*/
 
 
-
-function compress(req, res, input) {
-  const format = req.params.webp ? "webp" : "jpeg"; // Output format
-  const quality = req.params.quality || 80; // Compression quality
-
-  const sharpInstance = sharp({ unlimited: true, animated: false });
-
-  // Handle input stream errors
-  input.on("error", (err) => {
-    console.error("Input stream error:", err.message);
-    redirect(req, res);
-  });
-
-  // Write input stream chunks to Sharp instance
-  input.on("data", (chunk) => sharpInstance.write(chunk));
-
-  input.on("end", () => {
-    sharpInstance.end();
-
-    sharpInstance
-      .metadata()
-      .then((metadata) => {
-        // Resize if height exceeds the limit
-        if (metadata.height > 16383) {
-          sharpInstance.resize({ height: 16383 });
-        }
-
-        // Apply grayscale if requested
-        if (req.params.grayscale) {
-          sharpInstance.grayscale();
-        }
-
-        // Set up the output format and quality, then pipe to response stream directly
-        const outputStream = sharpInstance
-          .toFormat(format, {
-            quality, // Set compression quality
-            effort: 0, // Optimize for speed
-          });
-
-        // Set the appropriate headers
-        const originalSize = parseInt(req.params.originSize, 10) || metadata.size || 0;
-        const bytesSaved = originalSize - req.params.originSize;
-
-        res.setHeader("Content-Type", `image/${format}`);
-        res.setHeader("X-Original-Size", originalSize);
-        res.setHeader("X-Bytes-Saved", bytesSaved > 0 ? bytesSaved : 0);
-        
-        // Pipe the processed image to the response stream
-        outputStream.pipe(res);
-
-        // Handle stream errors
-        outputStream.on("error", (err) => {
-          console.error("Error during image processing:", err.message);
-          redirect(req, res);
-        });
-
-        // Optionally, clean up the input stream
-        input.on("end", () => {
-          // No need to manually clean up in-memory data since we're streaming it
-        });
-      })
-      .catch((err) => {
-        console.error("Error fetching metadata:", err.message);
-        redirect(req, res); // Handle metadata errors
-      });
-  });
-}
 
 
 // Function to handle the request
