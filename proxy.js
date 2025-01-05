@@ -104,8 +104,6 @@ function shouldCompress(req) {
 
 
 
-import { PassThrough } from "stream";
-
 function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg"; // Output format
   const quality = req.params.quality || 80; // Compression quality
@@ -137,44 +135,38 @@ function compress(req, res, input) {
           sharpInstance.grayscale();
         }
 
-        // Process the image in memory
-        sharpInstance
+        // Set up the output format and quality, then pipe to response stream directly
+        const outputStream = sharpInstance
           .toFormat(format, {
             quality, // Set compression quality
             effort: 0, // Optimize for speed
-          })
-          .toBuffer((err, buffer, info) => {
-            if (err) {
-              console.error("Error during image processing:", err.message);
-              redirect(req, res);
-              return;
-            }
-
-            // Set response headers
-            const originalSize = parseInt(req.params.originSize, 10) || metadata.size || 0;
-            const bytesSaved = originalSize - info.size;
-
-            res.setHeader("Content-Type", `image/${format}`);
-            res.setHeader("Content-Length", info.size);
-            res.setHeader("X-Original-Size", originalSize);
-            res.setHeader("X-Bytes-Saved", bytesSaved > 0 ? bytesSaved : 0);
-            res.statusCode = 200;
-
-            // Stream the buffer directly to the client
-            const bufferStream = new PassThrough();
-            bufferStream.end(buffer); // Pass the buffer to the stream
-            bufferStream.pipe(res);
-
-            // Handle streaming errors
-            bufferStream.on("error", (streamErr) => {
-              console.error("Error streaming buffer:", streamErr.message);
-              redirect(req, res);
-            });
           });
+
+        // Set the appropriate headers
+        const originalSize = parseInt(req.params.originSize, 10) || metadata.size || 0;
+        const bytesSaved = originalSize - req.params.originSize;
+
+        res.setHeader("Content-Type", `image/${format}`);
+        res.setHeader("X-Original-Size", originalSize);
+        res.setHeader("X-Bytes-Saved", bytesSaved > 0 ? bytesSaved : 0);
+        
+        // Pipe the processed image to the response stream
+        outputStream.pipe(res);
+
+        // Handle stream errors
+        outputStream.on("error", (err) => {
+          console.error("Error during image processing:", err.message);
+          redirect(req, res);
+        });
+
+        // Optionally, clean up the input stream
+        input.on("end", () => {
+          // No need to manually clean up in-memory data since we're streaming it
+        });
       })
       .catch((err) => {
         console.error("Error fetching metadata:", err.message);
-        redirect(req, res);
+        redirect(req, res); // Handle metadata errors
       });
   });
 }
