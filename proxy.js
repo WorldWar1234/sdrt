@@ -43,7 +43,7 @@ function shouldCompress(req) {
 }
 
 
-/*function compress(req, res, input) {
+function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg"; // Determine the output format
   const quality = req.params.quality || 80; // Default quality
   const sharpInstance = sharp({ unlimited: true, animated: false });
@@ -99,9 +99,9 @@ function shouldCompress(req) {
       console.error("Error fetching metadata:", err.message);
       redirect(req, res); // Handle metadata errors
     });
-}*/
+}
 
-function compress(req, res, input) {
+/*function compress(req, res, input) {
   const format = req.params.webp ? "webp" : "jpeg"; // Determine the output format
   const quality = req.params.quality || 80; // Default quality
   const sharpInstance = sharp({ unlimited: true, animated: false });
@@ -157,7 +157,7 @@ function compress(req, res, input) {
       console.error("Error fetching metadata:", err.message);
       redirect(req, res); // Handle metadata errors
     });
-}
+}*/
 
 
 
