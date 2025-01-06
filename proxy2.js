@@ -39,7 +39,7 @@ async function compress(input, format, quality, grayscale) {
 }
 
 // Function to handle image compression requests
-async function handleRequest(req, res) {
+export async function handleRequest(req, res) {
   const imageUrl = req.query.url;
   const isWebp = !req.query.jpeg;
   const grayscale = req.query.bw == "1";
