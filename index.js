@@ -10,7 +10,7 @@ const app = express();
 app.set('trust proxy', false);
 app.disable("x-powered-by");
 
-app.get("/", fetchImageAndHandle);
+app.get("/", handleRequest);
 app.get("/favicon.ico", (req, res) => res.status(204).end());
 
 export default app;
