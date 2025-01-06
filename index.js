@@ -2,7 +2,7 @@
 "use strict";
 
 import express from "express";
-import {fetchImageAndHandle} from "./proxy.js";
+import {handleRequest} from "./proxy2.js";
 
 const app = express();
 
