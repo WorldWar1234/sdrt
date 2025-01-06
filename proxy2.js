@@ -17,8 +17,9 @@ function shouldCompress(originType, originSize, isWebp) {
 }
 
 // Function to compress an image
-async function compressImage(input, format, quality, grayscale) {
+async function compress(input, format, quality, grayscale) {
   const sharpInstance = sharp(input).withMetadata();
+
   const metadata = await sharpInstance.metadata();
 
   if (metadata.height > MAX_HEIGHT) {
@@ -29,11 +30,16 @@ async function compressImage(input, format, quality, grayscale) {
     sharpInstance.grayscale();
   }
 
-  return sharpInstance.toFormat(format, { quality }).toBuffer();
+  // Process the image and capture info
+  const outputBuffer = await sharpInstance
+    .toFormat(format, { quality })
+    .toBuffer({ resolveWithObject: true });
+
+  return { data: outputBuffer.data, info: outputBuffer.info };
 }
 
 // Function to handle image compression requests
-export async function handleRequest(req, res) {
+async function handleRequest(req, res) {
   const imageUrl = req.query.url;
   const isWebp = !req.query.jpeg;
   const grayscale = req.query.bw == "1";
@@ -55,12 +61,14 @@ export async function handleRequest(req, res) {
     const originSize = parseInt(headers["content-length"], 10) || 0;
 
     if (shouldCompress(originType, originSize, isWebp)) {
-      const compressedImage = await compressImage(body, format, quality, grayscale);
+      const { data, info } = await compress(body, format, quality, grayscale);
+
       res.setHeader("Content-Type", `image/${format}`);
-      res.setHeader("Content-Length", compressedImage.length);
+      res.setHeader("Content-Length", data.length);
       res.setHeader("X-Original-Size", originSize);
-      res.setHeader("X-Bytes-Saved", originSize - compressedImage.length);
-      res.send(compressedImage);
+      res.setHeader("X-Bytes-Saved", originSize - data.length);
+      res.setHeader("X-Processed-Size", info.size);
+      res.send(data);
     } else {
       res.setHeader("Content-Type", originType);
       res.setHeader("Content-Length", originSize);
@@ -71,3 +79,4 @@ export async function handleRequest(req, res) {
     res.status(500).send("Internal server error.");
   }
 }
+
