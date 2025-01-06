@@ -18,7 +18,9 @@ function shouldCompress(originType, originSize, isWebp) {
 
 // Function to compress an image
 async function compress(input, format, quality, grayscale) {
-  const sharpInstance = sharp(input).withMetadata();
+  const imagePipeline = sharp({ unlimited: true, animated: false });
+
+  const sharpInstance = input.pipe(imagePipeline);
 
   const metadata = await sharpInstance.metadata();
 
