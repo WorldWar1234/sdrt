@@ -17,34 +17,42 @@ function shouldCompress(originType, originSize, isWebp) {
 
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
+function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
   inputStream.pipe(sharpInstance);
 
-  // Use sharp to process the image metadata and apply resizing if needed
   sharpInstance
     .metadata()
     .then((metadata) => {
       if (metadata.height > MAX_HEIGHT) {
-        sharpInstance.resize({ height: MAX_HEIGHT }); // Resize if height exceeds the limit
+        sharpInstance.resize({ height: MAX_HEIGHT });
       }
 
       if (grayscale) {
         sharpInstance.grayscale();
       }
 
-      // Set headers for compressed image
+      // Set headers for the compressed image
       res.setHeader("Content-Type", `image/${format}`);
 
-      // Process the image
+      let processedSize = 0;
+
+      // Process the image and send it in chunks
       sharpInstance
         .toFormat(format, { quality })
+        .on("data", (chunk) => {
+          processedSize += chunk.length;
+          res.write(chunk); // Write each chunk to the response
+        })
         .on("info", (info) => {
           res.setHeader("X-Original-Size", originSize);
-          res.setHeader("X-Processed-Size", info.size);
-          res.setHeader("X-Bytes-Saved", originSize - info.size);
+          res.setHeader("X-Processed-Size", processedSize);
+          res.setHeader("X-Bytes-Saved", originSize - processedSize);
         })
-        .pipe(res) // Stream the compressed image to the response
+        .on("end", () => {
+          res.end(); // Ensure the response ends after all chunks are sent
+        })
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
@@ -55,6 +63,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       res.status(500).send("Error processing image metadata.");
     });
 }
+
 
 // Function to handle image compression requests
 export function fetchImageAndHandle(req, res) {
