@@ -17,7 +17,7 @@ function shouldCompress(originType, originSize, isWebp) {
 
 // Function to compress an image stream directly
 
-/*function compressStream(inputStream, format, quality, grayscale, res, originSize) {
+function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
   inputStream.pipe(sharpInstance);
@@ -63,68 +63,7 @@ function shouldCompress(originType, originSize, isWebp) {
       res.status(500).send("Error processing image metadata.");
     });
 }
-*/
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-sharp.cache(false);
-sharp.concurrency(1);
-function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  const sharpInstance = sharp({ unlimited: true, animated: false });
-  const tempFilePath = path.join(os.tmpdir(), `compressed-${Date.now()}.${format}`);
 
-  inputStream.pipe(sharpInstance);
-
-  sharpInstance
-    .metadata()
-    .then((metadata) => {
-      if (metadata.height > MAX_HEIGHT) {
-        sharpInstance.resize({ height: MAX_HEIGHT });
-      }
-
-      if (grayscale) {
-        sharpInstance.grayscale();
-      }
-
-      // Process the image and save to a temporary file
-      sharpInstance
-        .toFormat(format, { quality })
-        .toFile(tempFilePath)
-        .then((info) => {
-          const processedSize = info.size;
-
-          // Set headers for the compressed image
-          res.setHeader("Content-Type", `image/${format}`);
-          res.setHeader("X-Original-Size", originSize);
-          res.setHeader("X-Processed-Size", processedSize);
-          res.setHeader("X-Bytes-Saved", originSize - processedSize);
-
-          // Stream the compressed image file to the response
-          const fileStream = fs.createReadStream(tempFilePath);
-          fileStream.pipe(res);
-
-          fileStream.on("end", () => {
-            // Clean up the temporary file after streaming
-            fs.unlink(tempFilePath, (err) => {
-              if (err) console.error("Error deleting temp file:", err.message);
-            });
-          });
-
-          fileStream.on("error", (err) => {
-            console.error("Error reading temp file:", err.message);
-            res.status(500).send("Error processing compressed image.");
-          });
-        })
-        .catch((err) => {
-          console.error("Error saving compressed file:", err.message);
-          res.status(500).send("Error processing image.");
-        });
-    })
-    .catch((err) => {
-      console.error("Error fetching metadata:", err.message);
-      res.status(500).send("Error processing image metadata.");
-    });
-}
 
 
 // Function to handle image compression requests
