@@ -17,7 +17,7 @@ function shouldCompress(originType, originSize, isWebp) {
 
 // Function to compress an image stream directly
 
-/*function compressStream(inputStream, format, quality, grayscale, res, originSize) {
+function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
   inputStream.pipe(sharpInstance);
@@ -40,11 +40,8 @@ function shouldCompress(originType, originSize, isWebp) {
 
       // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality })
-        .on("data", (chunk) => {
-          processedSize += chunk.length;
-          res.write(chunk); // Write each chunk to the response
-        })
+        .toFormat(format, { quality, effort: 0 })
+        .pipe(res)
         .on("info", (info) => {
           res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
@@ -63,8 +60,8 @@ function shouldCompress(originType, originSize, isWebp) {
       res.status(500).send("Error processing image metadata.");
     });
 }
-*/
-function compressStream(inputStream, format, quality, grayscale, res, originSize) {
+
+/*function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: false, animated: false });
 
   inputStream.pipe(sharpInstance);
@@ -110,7 +107,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       console.error("Error fetching metadata:", err.message);
       res.status(500).send("Error processing image metadata.");
     });
-}
+}*/
 
 
 
