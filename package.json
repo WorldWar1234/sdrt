@@ -1,22 +1,20 @@
 {
-  "name": "node-app-version",
+  "name": "node-app",
   "main": "server.js",
   "type": "module",
   "private": true,
   "version": "1.0.1",
   "description": "Data service",
-  "author": "JhonySingh",
-  "license": "Mozilla Public License 2.0",
+  "author": "JhonnnnnySingh",
+  "license": "MIT",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "4.21.2",
-    "undici": "^5.28.4",
-    "user-agents": "^1.1.391",
     "sharp": "^0.33.5"
   },
   "engines": {
-    "node": "20.x"
+    "node": "20.18.1"
   }
 }
