@@ -17,7 +17,7 @@ function shouldCompress(originType, originSize, isWebp) {
 
 // Function to compress an image stream directly
 
-function compressStream(inputStream, format, quality, grayscale, res, originSize) {
+/*function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
   inputStream.pipe(sharpInstance);
@@ -52,6 +52,54 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
         })
         .on("end", () => {
           res.end(); // Ensure the response ends after all chunks are sent
+        })
+        .on("error", (err) => {
+          console.error("Error during compression:", err.message);
+          res.status(500).send("Error processing image.");
+        });
+    })
+    .catch((err) => {
+      console.error("Error fetching metadata:", err.message);
+      res.status(500).send("Error processing image metadata.");
+    });
+}
+*/
+function compressStream(inputStream, format, quality, grayscale, res, originSize) {
+  const sharpInstance = sharp({ unlimited: false, animated: false });
+
+  inputStream.pipe(sharpInstance);
+
+  sharpInstance
+    .metadata()
+    .then((metadata) => {
+      if (metadata.height > MAX_HEIGHT) {
+        sharpInstance.resize({ height: MAX_HEIGHT });
+      }
+
+      if (grayscale) {
+        sharpInstance.grayscale();
+      }
+
+      // Set headers for the compressed image
+      res.setHeader("Content-Type", `image/${format}`);
+
+      let processedSize = 0;
+
+      // Process and send chunks as buffers
+      sharpInstance
+        .toFormat(format, { quality })
+        .on("data", (chunk) => {
+          const buffer = Buffer.from(chunk); // Convert the chunk to a buffer
+          processedSize += buffer.length;
+          res.send(buffer); // Send the buffer chunk
+        })
+        .on("info", (info) => {
+          res.setHeader("X-Original-Size", originSize);
+          res.setHeader("X-Processed-Size", processedSize);
+          res.setHeader("X-Bytes-Saved", originSize - processedSize);
+        })
+        .on("end", () => {
+          res.end(); // Finalize the response
         })
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
