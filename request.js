@@ -16,8 +16,6 @@ function shouldCompress(originType, originSize, isWebp) {
 }
 
 // Function to compress an image stream directly
-
-function compressStream(inputStream, format, quality, grayscale, res, originSize) {
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
