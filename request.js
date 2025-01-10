@@ -40,7 +40,11 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       // Process and send chunks as buffers
       sharpInstance
         .toFormat(format, { quality, effort: 0 })
-        .pipe(res)
+        .on("data", (chunk) => {
+          const buffer = Buffer.from(chunk); // Convert the chunk to a buffer
+          processedSize += buffer.length;
+          res.write(buffer); // Send the buffer chunk
+        })
         .on("info", (info) => {
           res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
