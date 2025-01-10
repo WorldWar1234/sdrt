@@ -20,7 +20,7 @@ function shouldCompress(originType, originSize, isWebp) {
 const MAX_BUFFER_SIZE = 50 * 1024; // 50 KB buffer size
 
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  const sharpInstance = sharp({ unlimited: true, animated: false });
+  const sharpInstance = sharp({ unlimited: false, animated: false });
 
   inputStream.pipe(sharpInstance);
 
@@ -42,7 +42,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       let currentBufferSize = 0; // Track total size of buffered chunks
 
       sharpInstance
-        .toFormat(format, { quality })
+        .toFormat(format, { quality, effort: 0 })
         .on("data", (chunk) => {
           bufferQueue.push(chunk);
           currentBufferSize += chunk.length;
