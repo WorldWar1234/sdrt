@@ -17,7 +17,7 @@ function shouldCompress(originType, originSize, isWebp) {
 
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  const sharpInstance = sharp({ unlimited: true, animated: false });
+  const sharpInstance = sharp({ unlimited: false, animated: false });
 
   inputStream.pipe(sharpInstance);
 
@@ -39,7 +39,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Process and send chunks as buffers
       sharpInstance
-        .toFormat(format, { quality })
+        .toFormat(format, { quality, effort: 0 })
         .on("data", (chunk) => {
           const buffer = Buffer.from(chunk); // Convert the chunk to a buffer
           processedSize += buffer.length;
