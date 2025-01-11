@@ -14,7 +14,8 @@ function shouldCompress(originType, originSize, isWebp) {
     !originType.endsWith("gif") // Skip GIFs for simplicity
   );
 }
-
+sharp.cache(false);
+sharp.concurrency(1);
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: false, animated: false });
@@ -35,20 +36,20 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       // Set headers for the compressed image
       res.setHeader("Content-Type", `image/${format}`);
 
-      let processedSize = 0;
+     // let processedSize = 0;
 
       // Process and send chunks as buffers
       sharpInstance
         .toFormat(format, { quality, effort: 0 })
         .on("data", (chunk) => {
           const buffer = Buffer.from(chunk); // Convert the chunk to a buffer
-          processedSize += buffer.length;
-          res.end(buffer); // Send the buffer chunk
+         // processedSize += buffer.length;
+          res.send(buffer); // Send the buffer chunk
         })
         .on("info", (info) => {
           res.setHeader("X-Original-Size", originSize);
-          res.setHeader("X-Processed-Size", processedSize);
-          res.setHeader("X-Bytes-Saved", originSize - processedSize);
+         // res.setHeader("X-Processed-Size", processedSize);
+          //res.setHeader("X-Bytes-Saved", originSize - processedSize);
         })
         /*.on("end", () => {
           res.end(); // Finalize the response
