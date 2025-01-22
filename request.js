@@ -1,11 +1,10 @@
 import https from 'https';
 import sharp from 'sharp';
-import { Transform } from 'stream';
 
 // Constants
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
-const CHUNK_SIZE = 64 * 1024; // 64 KB chunk size
+const CHUNK_SEND_INTERVAL = 100; // Interval in milliseconds to send chunks
 
 // Utility function to determine if compression is needed
 function shouldCompress(originType, originSize, isWebp) {
@@ -20,8 +19,9 @@ function shouldCompress(originType, originSize, isWebp) {
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
-  let buffer = Buffer.alloc(0);
+  let buffer = [];
   let processedSize = 0;
+  let interval;
 
   inputStream.pipe(sharpInstance);
 
@@ -43,21 +43,24 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       sharpInstance
         .toFormat(format, { quality })
         .on("data", (chunk) => {
-          buffer = Buffer.concat([buffer, chunk]);
           processedSize += chunk.length;
-
-          // Send buffered chunks in controlled manner
-          while (buffer.length >= CHUNK_SIZE) {
-            const chunkToSend = buffer.slice(0, CHUNK_SIZE);
-            buffer = buffer.slice(CHUNK_SIZE);
-            res.write(chunkToSend);
-          }
+          buffer.push(chunk);
         })
         .on("end", () => {
           res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
           res.setHeader("X-Bytes-Saved", originSize - processedSize);
-          res.end(); // Ensure the response ends after all chunks are sent
+
+          // Start sending chunks from the buffer
+          interval = setInterval(() => {
+            if (buffer.length > 0) {
+              const chunk = buffer.shift();
+              res.write(chunk);
+            } else {
+              clearInterval(interval);
+              res.end(); // Ensure the response ends after all chunks are sent
+            }
+          }, CHUNK_SEND_INTERVAL);
         })
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
