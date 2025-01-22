@@ -4,7 +4,6 @@ import sharp from 'sharp';
 // Constants
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
-const CHUNK_SEND_INTERVAL = 100; // Interval in milliseconds to send chunks
 
 // Utility function to determine if compression is needed
 function shouldCompress(originType, originSize, isWebp) {
@@ -19,9 +18,7 @@ function shouldCompress(originType, originSize, isWebp) {
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
-  let buffer = [];
   let processedSize = 0;
-  let interval;
 
   inputStream.pipe(sharpInstance);
 
@@ -41,26 +38,17 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality, effort:0})
+        .toFormat(format, { quality , effort:0})
         .on("data", (chunk) => {
           processedSize += chunk.length;
-          buffer.push(chunk);
+          const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.send(buffer); // Send the buffer chunk
         })
         .on("end", () => {
           res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
           res.setHeader("X-Bytes-Saved", originSize - processedSize);
-
-          // Start sending chunks from the buffer
-          interval = setInterval(() => {
-            if (buffer.length > 0) {
-              const chunk = buffer.shift();
-              res.write(chunk);
-            } else {
-              clearInterval(interval);
-              res.end(); // Ensure the response ends after all chunks are sent
-            }
-          }, CHUNK_SEND_INTERVAL);
+          //res.end(); // Ensure the response ends after all chunks are sent
         })
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
