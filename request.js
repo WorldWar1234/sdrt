@@ -1,9 +1,11 @@
 import https from 'https';
 import sharp from 'sharp';
+import { Readable } from 'stream';
 
 // Constants
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
+const BUFFER_FLUSH_SIZE = 1024 * 1024; // Flush buffer every 1MB
 
 // Utility function to determine if compression is needed
 function shouldCompress(originType, originSize, isWebp) {
@@ -14,11 +16,12 @@ function shouldCompress(originType, originSize, isWebp) {
     !originType.endsWith("gif") // Skip GIFs for simplicity
   );
 }
-sharp.cache(false);
-sharp.concurrency(1);
+
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  const sharpInstance = sharp({ unlimited: false, animated: false });
+  const sharpInstance = sharp({ unlimited: true, animated: false });
+  let processedSize = 0;
+  let buffer = Buffer.alloc(0);
 
   inputStream.pipe(sharpInstance);
 
@@ -36,24 +39,35 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       // Set headers for the compressed image
       res.setHeader("Content-Type", `image/${format}`);
 
-     // let processedSize = 0;
-
-      // Process and send chunks as buffers
+      // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality, effort: 0 })
+        .toFormat(format, { quality })
         .on("data", (chunk) => {
-          const buffer = Buffer.from(chunk); // Convert the chunk to a buffer
-         // processedSize += buffer.length;
-          res.send(buffer); // Send the buffer chunk
+          processedSize += chunk.length;
+          buffer = Buffer.concat([buffer, chunk]);
+
+          // Flush the buffer if it exceeds the flush size
+          if (buffer.length >= BUFFER_FLUSH_SIZE) {
+            const readableStream = new Readable();
+            readableStream.push(buffer);
+            readableStream.push(null); // Signal the end of the stream
+            res.send(readableStream);
+            buffer = Buffer.alloc(0); // Reset the buffer
+          }
         })
-        .on("info", (info) => {
+        .on("end", () => {
+          // Send any remaining data in the buffer
+          if (buffer.length > 0) {
+            const readableStream = new Readable();
+            readableStream.push(buffer);
+            readableStream.push(null); // Signal the end of the stream
+            res.send(readableStream);
+          }
           res.setHeader("X-Original-Size", originSize);
-         // res.setHeader("X-Processed-Size", processedSize);
-          //res.setHeader("X-Bytes-Saved", originSize - processedSize);
+          res.setHeader("X-Processed-Size", processedSize);
+          res.setHeader("X-Bytes-Saved", originSize - processedSize);
+          res.end(); // Ensure the response ends after all chunks are sent
         })
-        /*.on("end", () => {
-          res.end(); // Finalize the response
-        })*/
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
@@ -64,59 +78,6 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       res.status(500).send("Error processing image metadata.");
     });
 }
-
-
-
-
-/*function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  const sharpInstance = sharp({ unlimited: false, animated: false });
-
-  inputStream.pipe(sharpInstance);
-
-  sharpInstance
-    .metadata()
-    .then((metadata) => {
-      if (metadata.height > MAX_HEIGHT) {
-        sharpInstance.resize({ height: MAX_HEIGHT });
-      }
-
-      if (grayscale) {
-        sharpInstance.grayscale();
-      }
-
-      // Set headers for the compressed image
-      res.setHeader("Content-Type", `image/${format}`);
-
-      let processedSize = 0;
-
-      // Process and send chunks as buffers
-      sharpInstance
-        .toFormat(format, { quality })
-        .on("data", (chunk) => {
-          const buffer = Buffer.from(chunk); // Convert the chunk to a buffer
-          processedSize += buffer.length;
-          res.send(buffer); // Send the buffer chunk
-        })
-        .on("info", (info) => {
-          res.setHeader("X-Original-Size", originSize);
-          res.setHeader("X-Processed-Size", processedSize);
-          res.setHeader("X-Bytes-Saved", originSize - processedSize);
-        })
-        .on("end", () => {
-          res.end(); // Finalize the response
-        })
-        .on("error", (err) => {
-          console.error("Error during compression:", err.message);
-          res.status(500).send("Error processing image.");
-        });
-    })
-    .catch((err) => {
-      console.error("Error fetching metadata:", err.message);
-      res.status(500).send("Error processing image metadata.");
-    });
-}*/
-
-
 
 // Function to handle image compression requests
 export function fetchImageAndHandle(req, res) {
