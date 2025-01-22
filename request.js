@@ -39,7 +39,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Process the image and collect chunks
       sharpInstance
-        .toFormat(format, { quality })
+        .toFormat(format, { quality,effort:0 })
         .on("data", (chunk) => {
           processedSize += chunk.length;
           chunks.push(chunk);
