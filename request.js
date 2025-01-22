@@ -1,6 +1,5 @@
 import https from 'https';
 import sharp from 'sharp';
-import { Readable } from 'stream';
 
 // Constants
 const DEFAULT_QUALITY = 80;
@@ -48,20 +47,14 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
           // Flush the buffer if it exceeds the flush size
           if (buffer.length >= BUFFER_FLUSH_SIZE) {
-            const readableStream = new Readable();
-            readableStream.push(buffer);
-            readableStream.push(null); // Signal the end of the stream
-            res.send(readableStream);
+            res.write(buffer);
             buffer = Buffer.alloc(0); // Reset the buffer
           }
         })
         .on("end", () => {
           // Send any remaining data in the buffer
           if (buffer.length > 0) {
-            const readableStream = new Readable();
-            readableStream.push(buffer);
-            readableStream.push(null); // Signal the end of the stream
-            res.send(readableStream);
+            res.write(buffer);
           }
           res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
