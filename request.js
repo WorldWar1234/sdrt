@@ -54,10 +54,6 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           }
         })
         .on("end", () => {
-          // Send any remaining data in the buffer
-          if (buffer.length > 0) {
-            res.write(buffer);
-          }
           res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
           res.setHeader("X-Bytes-Saved", originSize - processedSize);
