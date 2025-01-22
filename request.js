@@ -4,7 +4,6 @@ import sharp from 'sharp';
 // Constants
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
-const BUFFER_FLUSH_SIZE = 1024 * 1024; // Flush buffer every 1MB
 
 // Utility function to determine if compression is needed
 function shouldCompress(originType, originSize, isWebp) {
@@ -19,8 +18,8 @@ function shouldCompress(originType, originSize, isWebp) {
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
+  const chunks = [];
   let processedSize = 0;
-  let buffer = Buffer.alloc(0);
 
   inputStream.pipe(sharpInstance);
 
@@ -38,28 +37,20 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       // Set headers for the compressed image
       res.setHeader("Content-Type", `image/${format}`);
 
-      // Process the image and send it in chunks
+      // Process the image and collect chunks
       sharpInstance
         .toFormat(format, { quality })
         .on("data", (chunk) => {
           processedSize += chunk.length;
-          buffer = Buffer.concat([buffer, chunk]);
-
-          // Flush the buffer if it exceeds the flush size
-          if (buffer.length >= BUFFER_FLUSH_SIZE) {
-            res.write(buffer);
-            buffer = Buffer.alloc(0); // Reset the buffer
-          }
+          chunks.push(chunk);
         })
         .on("end", () => {
-          // Send any remaining data in the buffer
-          if (buffer.length > 0) {
-            res.write(buffer);
-          }
+          const buffer = Buffer.concat(chunks);
+          res.setHeader("Content-Length", buffer.length);
           res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
           res.setHeader("X-Bytes-Saved", originSize - processedSize);
-          res.end(); // Ensure the response ends after all chunks are sent
+          res.end(buffer); // Send the entire buffer in one go
         })
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
