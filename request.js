@@ -4,7 +4,6 @@ import sharp from 'sharp';
 // Constants
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
-const BUFFER_SIZE = 1024 * 1024; // 1 MB buffer size
 
 // Utility function to determine if compression is needed
 function shouldCompress(originType, originSize, isWebp) {
@@ -19,8 +18,6 @@ function shouldCompress(originType, originSize, isWebp) {
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
-  let buffer = Buffer.alloc(BUFFER_SIZE);
-  let bufferOffset = 0;
   let processedSize = 0;
 
   inputStream.pipe(sharpInstance);
@@ -44,37 +41,13 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
         .toFormat(format, { quality })
         .on("data", (chunk) => {
           processedSize += chunk.length;
-
-          // Copy chunk data into the buffer
-          let remaining = chunk.length;
-          let chunkOffset = 0;
-
-          while (remaining > 0) {
-            let space = BUFFER_SIZE - bufferOffset;
-            let toCopy = Math.min(remaining, space);
-
-            chunk.copy(buffer, bufferOffset, chunkOffset, chunkOffset + toCopy);
-            bufferOffset += toCopy;
-            chunkOffset += toCopy;
-            remaining -= toCopy;
-
-            // If the buffer is full, send it and reset
-            if (bufferOffset === BUFFER_SIZE) {
-              res.write(buffer);
-              bufferOffset = 0;
-            }
-          }
+          const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(buffer); // Send the buffer chunk
         })
         .on("end", () => {
           res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
           res.setHeader("X-Bytes-Saved", originSize - processedSize);
-
-          // Send any remaining data in the buffer
-          if (bufferOffset > 0) {
-            res.write(buffer.slice(0, bufferOffset));
-          }
-
           res.end(); // Ensure the response ends after all chunks are sent
         })
         .on("error", (err) => {
