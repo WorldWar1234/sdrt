@@ -4,7 +4,7 @@ import sharp from 'sharp';
 // Constants
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
-const CHUNK_SEND_INTERVAL = 100; // Interval in milliseconds to send chunks
+const BUFFER_SIZE = 1024 * 1024; // 1 MB buffer size
 
 // Utility function to determine if compression is needed
 function shouldCompress(originType, originSize, isWebp) {
@@ -19,9 +19,9 @@ function shouldCompress(originType, originSize, isWebp) {
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
-  let buffers = [];
+  let buffer = Buffer.alloc(BUFFER_SIZE);
+  let bufferOffset = 0;
   let processedSize = 0;
-  let interval;
 
   inputStream.pipe(sharpInstance);
 
@@ -38,30 +38,44 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Set headers for the compressed image
       res.setHeader("Content-Type", `image/${format}`);
-     // res.flushHeaders(); // Ensure headers are sent immediately
 
-      // Process the image and accumulate chunks into a buffer
+      // Process the image and send it in chunks
       sharpInstance
         .toFormat(format, { quality })
         .on("data", (chunk) => {
           processedSize += chunk.length;
-          buffers.push(chunk);
+
+          // Copy chunk data into the buffer
+          let remaining = chunk.length;
+          let chunkOffset = 0;
+
+          while (remaining > 0) {
+            let space = BUFFER_SIZE - bufferOffset;
+            let toCopy = Math.min(remaining, space);
+
+            chunk.copy(buffer, bufferOffset, chunkOffset, chunkOffset + toCopy);
+            bufferOffset += toCopy;
+            chunkOffset += toCopy;
+            remaining -= toCopy;
+
+            // If the buffer is full, send it and reset
+            if (bufferOffset === BUFFER_SIZE) {
+              res.write(buffer);
+              bufferOffset = 0;
+            }
+          }
         })
         .on("end", () => {
           res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
           res.setHeader("X-Bytes-Saved", originSize - processedSize);
 
-          // Start sending chunks from the buffer
-          interval = setInterval(() => {
-            if (buffers.length > 0) {
-              const chunk = buffers.shift();
-              res.write(chunk); // Send the chunk directly
-            } else {
-              clearInterval(interval);
-              res.end(); // Ensure the response ends after all chunks are sent
-            }
-          }, CHUNK_SEND_INTERVAL);
+          // Send any remaining data in the buffer
+          if (bufferOffset > 0) {
+            res.write(buffer.slice(0, bufferOffset));
+          }
+
+          res.end(); // Ensure the response ends after all chunks are sent
         })
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
