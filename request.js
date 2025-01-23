@@ -1,5 +1,6 @@
 import https from 'https';
 import sharp from 'sharp';
+import { Writable } from 'stream';
 
 // Constants
 const DEFAULT_QUALITY = 80;
@@ -20,6 +21,20 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
   const sharpInstance = sharp({ unlimited: true, animated: false });
   let processedSize = 0;
 
+  // Create a writable stream to handle the response
+  const writable = new Writable({
+    write(chunk, encoding, callback) {
+      processedSize += chunk.length;
+      res.write(chunk, encoding, callback);
+    },
+    final(callback) {
+      res.setHeader("X-Original-Size", originSize);
+      res.setHeader("X-Processed-Size", processedSize);
+      res.setHeader("X-Bytes-Saved", originSize - processedSize);
+      res.end(callback);
+    }
+  });
+
   inputStream.pipe(sharpInstance);
 
   sharpInstance
@@ -38,15 +53,8 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality,effort:0})
-        .on("data", (chunk) => {
-          processedSize += chunk.length;
-         // const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(chunk); // Send the buffer chunk
-        })
-        .on("end", () => {
-          res.end(); // Ensure the response ends after all chunks are sent
-        })
+        .toFormat(format, { quality })
+        .pipe(writable)
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
