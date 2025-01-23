@@ -38,7 +38,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Set headers for the compressed image
       res.setHeader("Content-Type", `image/${format}`);
-      res.flushHeaders(); // Ensure headers are sent immediately
+     // res.flushHeaders(); // Ensure headers are sent immediately
 
       // Process the image and accumulate chunks into a buffer
       sharpInstance
