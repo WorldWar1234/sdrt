@@ -45,8 +45,9 @@ class BufferChunks extends Transform {
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: false, animated: false });
   let processedSize = 0;
+  let compressedBuffer = Buffer.alloc(0);
 
-  inputStream.pipe(new BufferChunks()).pipe(sharpInstance);
+  inputStream.pipe(sharpInstance);
 
   sharpInstance
     .metadata()
@@ -59,7 +60,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
         sharpInstance.grayscale();
       }
 
-      // Process the image and send it in chunks
+      // Process the image and buffer it in chunks
       sharpInstance
         .toFormat(format, { quality })
         .on("info", (info) => {
@@ -70,10 +71,20 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
         .on("data", (chunk) => {
+          compressedBuffer = Buffer.concat([compressedBuffer, chunk]);
           processedSize += chunk.length;
-          res.write(chunk); // Send the buffer chunk
+
+          // Send chunks in a controlled manner
+          while (compressedBuffer.length >= CHUNK_SIZE) {
+            const chunkToSend = compressedBuffer.slice(0, CHUNK_SIZE);
+            compressedBuffer = compressedBuffer.slice(CHUNK_SIZE);
+            res.write(chunkToSend); // Send the buffer chunk to the client
+          }
         })
         .on("end", () => {
+          if (compressedBuffer.length > 0) {
+            res.write(compressedBuffer); // Send any remaining data
+          }
           res.end(); // Ensure the response ends after all chunks are sent
         })
         .on("error", (err) => {
