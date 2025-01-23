@@ -31,7 +31,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
       res.setHeader("X-Original-Size", originSize);
       res.setHeader("X-Processed-Size", processedSize);
       res.setHeader("X-Bytes-Saved", originSize - processedSize);
-      res.end(callback);
+    //  res.end(callback);
     }
   });
 
