@@ -42,13 +42,12 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
         .on("data", (chunk) => {
           
           const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          processedSize += buffer.length;
           res.write(buffer); // Send the buffer chunk
         })
         .on("end", () => {
-         res.setHeader("X-Original-Size", originSize);
+         /*res.setHeader("X-Original-Size", originSize);
           res.setHeader("X-Processed-Size", processedSize);
-          res.setHeader("X-Bytes-Saved", originSize - processedSize);
+          res.setHeader("X-Bytes-Saved", originSize - processedSize);*/
           res.end(); // Ensure the response ends after all chunks are sent
         })
         .on("error", (err) => {
