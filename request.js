@@ -1,10 +1,10 @@
 import https from 'https';
 import sharp from 'sharp';
-import { Writable } from 'stream';
 
 // Constants
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
+const CHUNK_SEND_INTERVAL = 100; // Interval in milliseconds to send chunks
 
 // Utility function to determine if compression is needed
 function shouldCompress(originType, originSize, isWebp) {
@@ -19,21 +19,9 @@ function shouldCompress(originType, originSize, isWebp) {
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
+  let buffers = [];
   let processedSize = 0;
-
-  // Create a writable stream to handle the response
-  const writable = new Writable({
-    write(chunk, encoding, callback) {
-      processedSize += chunk.length;
-      res.write(chunk, encoding, callback);
-    },
-    final(callback) {
-      res.setHeader("X-Original-Size", originSize);
-      res.setHeader("X-Processed-Size", processedSize);
-      res.setHeader("X-Bytes-Saved", originSize - processedSize);
-    //  res.end(callback);
-    }
-  });
+  let interval;
 
   inputStream.pipe(sharpInstance);
 
@@ -50,11 +38,31 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Set headers for the compressed image
       res.setHeader("Content-Type", `image/${format}`);
+      res.flushHeaders(); // Ensure headers are sent immediately
 
-      // Process the image and send it in chunks
+      // Process the image and accumulate chunks into a buffer
       sharpInstance
         .toFormat(format, { quality, effort:0 })
-        .pipe(writable)
+        .on("data", (chunk) => {
+          processedSize += chunk.length;
+          buffers.push(chunk);
+        })
+        .on("end", () => {
+          res.setHeader("X-Original-Size", originSize);
+          res.setHeader("X-Processed-Size", processedSize);
+          res.setHeader("X-Bytes-Saved", originSize - processedSize);
+
+          // Start sending chunks from the buffer
+          interval = setInterval(() => {
+            if (buffers.length > 0) {
+              const chunk = buffers.shift();
+              res.write(chunk); // Send the chunk directly
+            } else {
+              clearInterval(interval);
+              res.end(); // Ensure the response ends after all chunks are sent
+            }
+          }, CHUNK_SEND_INTERVAL);
+        })
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
