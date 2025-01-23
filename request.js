@@ -35,7 +35,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality })
+        .toFormat(format, { quality, effort:0 })
         .on("info", (info) => {
           // Set headers for the compressed image
           res.setHeader("Content-Type", `image/${format}`);
@@ -44,9 +44,9 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
         .on("data", (chunk) => {
-          processedSize += chunk.length;
-          const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(buffer); // Send the buffer chunk
+         // processedSize += chunk.length;
+         // const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(chunk); // Send the buffer chunk
         })
         .on("end", () => {
           res.end(); // Ensure the response ends after all chunks are sent
