@@ -1,9 +1,11 @@
 import https from 'https';
 import sharp from 'sharp';
+import { Transform } from 'stream';
 
 // Constants
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
+const CHUNK_SIZE = 64 * 1024; // 64 KB chunks
 
 // Utility function to determine if compression is needed
 function shouldCompress(originType, originSize, isWebp) {
@@ -15,12 +17,36 @@ function shouldCompress(originType, originSize, isWebp) {
   );
 }
 
+// Custom Transform stream to buffer chunks
+class BufferChunks extends Transform {
+  constructor(options) {
+    super(options);
+    this.buffer = Buffer.alloc(0);
+  }
+
+  _transform(chunk, encoding, callback) {
+    this.buffer = Buffer.concat([this.buffer, chunk]);
+    while (this.buffer.length >= CHUNK_SIZE) {
+      this.push(this.buffer.slice(0, CHUNK_SIZE));
+      this.buffer = this.buffer.slice(CHUNK_SIZE);
+    }
+    callback();
+  }
+
+  _flush(callback) {
+    if (this.buffer.length > 0) {
+      this.push(this.buffer);
+    }
+    callback();
+  }
+}
+
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: false, animated: false });
   let processedSize = 0;
 
-  inputStream.pipe(sharpInstance);
+  inputStream.pipe(new BufferChunks()).pipe(sharpInstance);
 
   sharpInstance
     .metadata()
@@ -35,7 +61,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality})
+        .toFormat(format, { quality })
         .on("info", (info) => {
           // Set headers for the compressed image
           res.setHeader("Content-Type", `image/${format}`);
@@ -44,8 +70,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
         .on("data", (chunk) => {
-         // processedSize += chunk.length;
-          //const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          processedSize += chunk.length;
           res.write(chunk); // Send the buffer chunk
         })
         .on("end", () => {
@@ -68,7 +93,7 @@ export function fetchImageAndHandle(req, res) {
   const isWebp = !req.query.jpeg;
   const grayscale = req.query.bw == "1";
   const quality = parseInt(req.query.quality, 10) || DEFAULT_QUALITY;
-  const format = "jpeg";
+  const format = isWebp ? "webp" : "jpeg";
 
   if (!imageUrl) {
     return res.status(400).send("Image URL is required.");
