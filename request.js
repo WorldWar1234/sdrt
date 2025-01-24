@@ -69,7 +69,6 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Processed-Size", info.size);
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
-        .pipe(res)
         .on("data", (chunk) => {
          const compressedBuffer = Buffer.concat([compressedBuffer, chunk]);
           processedSize += chunk.length;
