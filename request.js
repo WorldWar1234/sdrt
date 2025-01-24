@@ -55,9 +55,9 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           }
         })
         .on("end", () => {
-          if (buffers.length > 0) {
+         /* if (buffers.length > 0) {
             res.write(Buffer.concat(buffers));
-          }
+          }*/
           res.end(); // Ensure the response ends after all chunks are sent
         })
         .on("error", (err) => {
