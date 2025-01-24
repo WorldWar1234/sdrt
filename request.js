@@ -49,9 +49,9 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           buffers.push(chunk);
 
           // Send chunks in parts
-          if (buffers.length > 0) { // Adjust the number based on your needs
+          if (buffers.length > 10) { // Adjust the number based on your needs
             res.write(Buffer.concat(buffers));
-            buffers = [];
+           // buffers = [];
           }
         })
         .on("end", () => {
