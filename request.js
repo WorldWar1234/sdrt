@@ -50,13 +50,13 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
           // Send chunks in parts
           if (buffers.length > 10) { // Adjust the number based on your needs
-            res.write(Buffer.concat(buffers));
-           // buffers = [];
+            res.end(Buffer.concat(buffers));
+            buffers = [];
           }
         })
-        .on("end", () => {
+        /*.on("end", () => {
           res.end(); // Ensure the response ends after all chunks are sent
-        })
+        })*/
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
