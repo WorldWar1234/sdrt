@@ -74,11 +74,8 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
          const compressedBuffer = Buffer.concat([compressedBuffer, chunk]);
           processedSize += chunk.length;
 
-          // Send chunks in a controlled manner
-          while (compressedBuffer.length >= 0) {
-            const chunkToSend = compressedBuffer.slice(0, CHUNK_SIZE);
-            compressedBuffer = compressedBuffer.slice(CHUNK_SIZE);
-            res.write(chunkToSend); // Send the buffer chunk to the client
+          
+            res.write(compressedBuffer); // Send the buffer chunk to the client
           }
         })
         .on("end", () => {
