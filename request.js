@@ -61,7 +61,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Process the image and buffer it in chunks
       sharpInstance
-        .toFormat(format, { quality })
+        .toFormat(format, { quality , effort:0})
         .on("info", (info) => {
           // Set headers for the compressed image
           res.setHeader("Content-Type", `image/${format}`);
