@@ -18,7 +18,7 @@ function shouldCompress(originType, originSize, isWebp) {
 }
 
 // Custom Transform stream to buffer chunks
-/*class BufferChunks extends Transform {
+class BufferChunks extends Transform {
   constructor(options) {
     super(options);
     this.buffer = Buffer.alloc(0);
@@ -39,13 +39,12 @@ function shouldCompress(originType, originSize, isWebp) {
     }
     callback();
   }
-}*/
+}
 
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  const sharpInstance = sharp({ unlimited: true, animated: false });
-  let compressedBuffer = Buffer.alloc(0);
- let  processedSize = 0;
+  const sharpInstance = sharp({ unlimited: false, animated: false });
+  const bufferChunks = new BufferChunks();
 
   inputStream.pipe(sharpInstance);
 
@@ -70,21 +69,16 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Processed-Size", info.size);
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
-        .on("data", (chunk) => {
-         const compressedBuffer = Buffer.concat([compressedBuffer, chunk]);
-          processedSize += chunk.length;
-
-          
-            res.write(compressedBuffer); // Send the buffer chunk to the client
-          }
-        })
-        .on("end", () => {
-          res.end(); // Ensure the response ends after all chunks are sent
-        })
+        .pipe(bufferChunks)
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
+        })
+        .on("end", () => {
+          res.end(); // Ensure the response ends after all chunks are sent
         });
+
+      bufferChunks.pipe(res);
     })
     .catch((err) => {
       console.error("Error fetching metadata:", err.message);
@@ -98,7 +92,7 @@ export function fetchImageAndHandle(req, res) {
   const isWebp = !req.query.jpeg;
   const grayscale = req.query.bw == "1";
   const quality = parseInt(req.query.quality, 10) || DEFAULT_QUALITY;
-  const format = "jpeg";
+  const format = isWebp ? "webp" : "jpeg";
 
   if (!imageUrl) {
     return res.status(400).send("Image URL is required.");
