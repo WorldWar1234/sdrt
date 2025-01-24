@@ -45,6 +45,7 @@ function shouldCompress(originType, originSize, isWebp) {
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
   let compressedBuffer = Buffer.alloc(0);
+ let  processedSize = 0;
 
   inputStream.pipe(sharpInstance);
 
