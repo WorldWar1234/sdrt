@@ -17,10 +17,9 @@ function shouldCompress(originType, originSize, isWebp) {
 
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  sharp.cache(false);
-  sharp.concurrency(1);
-  sharp.simd(true);
   const sharpInstance = sharp({ unlimited: false, animated: false });
+  let processedSize = 0;
+  let buffers = [];
 
   inputStream.pipe(sharpInstance);
 
@@ -46,10 +45,19 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
         .on("data", (chunk) => {
-          const buffer= Buffer.from(chunk);
-          res.write(buffer); // Send the buffer chunk
+          processedSize += chunk.length;
+          buffers.push(chunk);
+
+          // Send chunks in parts
+          if (buffers.length >= 10) { // Adjust the number based on your needs
+            res.write(Buffer.concat(buffers));
+            buffers = [];
+          }
         })
         .on("end", () => {
+          if (buffers.length > 0) {
+            res.write(Buffer.concat(buffers));
+          }
           res.end(); // Ensure the response ends after all chunks are sent
         })
         .on("error", (err) => {
@@ -69,7 +77,7 @@ export function fetchImageAndHandle(req, res) {
   const isWebp = !req.query.jpeg;
   const grayscale = req.query.bw == "1";
   const quality = parseInt(req.query.quality, 10) || DEFAULT_QUALITY;
-  const format = "jpeg";
+  const format = isWebp ? "webp" : "jpeg";
 
   if (!imageUrl) {
     return res.status(400).send("Image URL is required.");
