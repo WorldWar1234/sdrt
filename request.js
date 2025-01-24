@@ -43,8 +43,8 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
         .on("data", (chunk) => {
-          //const buffer = Buffer.from(chunk);
-          res.write(chunk);
+          const buffer = Buffer.from(chunk);
+          res.write(buffer);
         })
         .on("end", () => {
             res.end(); // Ensure the response ends after all chunks are sent
