@@ -18,7 +18,7 @@ function shouldCompress(originType, originSize, isWebp) {
 }
 
 // Custom Transform stream to buffer chunks
-class BufferChunks extends Transform {
+/*class BufferChunks extends Transform {
   constructor(options) {
     super(options);
     this.buffer = Buffer.alloc(0);
@@ -39,12 +39,12 @@ class BufferChunks extends Transform {
     }
     callback();
   }
-}
+}*/
 
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
-//  let compressedBuffer = Buffer.alloc(0);
+  let compressedBuffer = Buffer.alloc(0);
 
   inputStream.pipe(sharpInstance);
 
@@ -70,23 +70,20 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
         .pipe(res)
-       /* .on("data", (chunk) => {
-          compressedBuffer = Buffer.concat([compressedBuffer, chunk]);
+        .on("data", (chunk) => {
+         const compressedBuffer = Buffer.concat([compressedBuffer, chunk]);
           processedSize += chunk.length;
 
           // Send chunks in a controlled manner
-          while (compressedBuffer.length >= CHUNK_SIZE) {
+          while (compressedBuffer.length >= 0) {
             const chunkToSend = compressedBuffer.slice(0, CHUNK_SIZE);
             compressedBuffer = compressedBuffer.slice(CHUNK_SIZE);
             res.write(chunkToSend); // Send the buffer chunk to the client
           }
         })
         .on("end", () => {
-          if (compressedBuffer.length > 0) {
-            res.write(compressedBuffer); // Send any remaining data
-          }
           res.end(); // Ensure the response ends after all chunks are sent
-        })*/
+        })
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
