@@ -18,9 +18,7 @@ function shouldCompress(originType, originSize, isWebp) {
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: false, animated: false });
-  let processedSize = 0;
-  let buffers = [];
-
+  sharp.cache(0);
   inputStream.pipe(sharpInstance);
 
   sharpInstance
@@ -36,7 +34,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 
       // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality })
+        .toFormat(format, { quality, effort:0 })
         .on("info", (info) => {
           // Set headers for the compressed image
           res.setHeader("Content-Type", `image/${format}`);
@@ -45,18 +43,9 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
         .on("data", (chunk) => {
-          processedSize += chunk.length;
-          buffers.push(chunk);
-
-          // Send chunks in parts
-          if (buffers.length > 0) { // Adjust the number based on your needs
-            res.end(Buffer.concat(buffers));
-            buffers = [];
-          }
+          const buffer = Buffer.from(chunk);
+          res.send(buffer);
         })
-        /*.on("end", () => {
-          res.end(); // Ensure the response ends after all chunks are sent
-        })*/
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
