@@ -43,9 +43,8 @@ class BufferChunks extends Transform {
 
 // Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  const sharpInstance = sharp({ unlimited: false, animated: false });
-  let processedSize = 0;
-  let compressedBuffer = Buffer.alloc(0);
+  const sharpInstance = sharp({ unlimited: true, animated: false });
+//  let compressedBuffer = Buffer.alloc(0);
 
   inputStream.pipe(sharpInstance);
 
@@ -70,7 +69,8 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Processed-Size", info.size);
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
-        .on("data", (chunk) => {
+        .pipe(res)
+       /* .on("data", (chunk) => {
           compressedBuffer = Buffer.concat([compressedBuffer, chunk]);
           processedSize += chunk.length;
 
@@ -86,7 +86,7 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
             res.write(compressedBuffer); // Send any remaining data
           }
           res.end(); // Ensure the response ends after all chunks are sent
-        })
+        })*/
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
