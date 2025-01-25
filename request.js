@@ -1,8 +1,6 @@
 import https from 'https';
-import fs from 'fs';
-import zlib from 'zlib';
-import { Readable, Writable } from 'stream';
 import sharp from 'sharp';
+import { Transform } from 'stream';
 
 // Constants
 const DEFAULT_QUALITY = 80;
@@ -18,71 +16,48 @@ function shouldCompress(originType, originSize, isWebp) {
   );
 }
 
-// Function to resize the image manually using sharp
-function resizeImage(inputStream, heightLimit) {
-  const sharpInstance = sharp();
-  return new Readable({
-    read() {
-      inputStream.pipe(sharpInstance.resize({ height: heightLimit })).pipe(this);
-    },
-  });
-}
-
-// Function to convert the image format manually using sharp
-function convertImage(inputStream, format, quality) {
-  const sharpInstance = sharp();
-  return new Readable({
-    read() {
-      inputStream.pipe(sharpInstance.toFormat(format, { quality, effort: 0 })).pipe(this);
-    },
-  });
-}
-
-// Function to handle grayscale conversion using sharp
-function convertToGrayscale(inputStream) {
-  const sharpInstance = sharp();
-  return new Readable({
-    read() {
-      inputStream.pipe(sharpInstance.grayscale()).pipe(this);
-    },
-  });
-}
-
-// Function to compress the image stream directly
+// Function to compress an image stream directly using Node.js Transform streams
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  let processedStream = inputStream;
+  const sharpInstance = sharp({ unlimited: false, animated: false })
+    .resize({ height: MAX_HEIGHT, withoutEnlargement: true });
 
-  // Resize the image if it exceeds the max height
-  processedStream = resizeImage(processedStream, MAX_HEIGHT);
-
-  // Apply grayscale conversion if needed
   if (grayscale) {
-    processedStream = convertToGrayscale(processedStream);
+    sharpInstance.grayscale();
   }
 
-  // Convert the image format and quality
-  processedStream = convertImage(processedStream, format, quality);
+  // Set the output format and quality
+  sharpInstance.toFormat(format, { quality, effort: 0 });
 
-  processedStream
-    .on("data", (chunk) => {
-      const buffer = Buffer.from(chunk);
-      res.write(buffer);
+  // Create a Transform stream to manage the response headers and output to the client
+  const transformStream = new Transform({
+    transform(chunk, encoding, callback) {
+      this.push(chunk); // Pass each chunk to the response stream
+      callback();
+    }
+  });
+
+  // Pipe sharp output through the transform stream
+  inputStream.pipe(sharpInstance).pipe(transformStream);
+
+  // Send response headers and data to the client
+  sharpInstance
+    .on('info', (info) => {
+      // Set headers for the compressed image
+      res.setHeader("Content-Type", `image/${format}`);
+      res.setHeader("X-Original-Size", originSize);
+      res.setHeader("X-Processed-Size", info.size);
+      res.setHeader("X-Bytes-Saved", originSize - info.size);
     })
-    .on("end", () => {
+    .on('end', () => {
       res.end(); // Ensure the response ends after all chunks are sent
     })
-    .on("error", (err) => {
+    .on('error', (err) => {
       console.error("Error during compression:", err.message);
       res.status(500).send("Error processing image.");
     });
 
-  // Sending the headers before the stream starts
-  processedStream.once('data', () => {
-    res.setHeader("Content-Type", `image/${format}`);
-    res.setHeader("X-Original-Size", originSize);
-    res.setHeader("X-Processed-Size", processedStream.readableLength || originSize);
-    res.setHeader("X-Bytes-Saved", originSize - (processedStream.readableLength || originSize));
-  });
+  // Pipe the transformed stream to the response
+  transformStream.pipe(res);
 }
 
 // Function to handle image compression requests
