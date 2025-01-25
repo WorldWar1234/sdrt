@@ -66,7 +66,7 @@ export function fetchImageAndHandle(req, res) {
   const isWebp = !req.query.jpeg;
   const grayscale = req.query.bw == "1";
   const quality = parseInt(req.query.quality, 10) || DEFAULT_QUALITY;
-  const format = isWebp ? "webp" : "jpeg";
+  const format = "jpeg";
 
   if (!imageUrl) {
     return res.status(400).send("Image URL is required.");
