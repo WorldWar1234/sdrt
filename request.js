@@ -1,6 +1,5 @@
 import https from 'https';
 import sharp from 'sharp';
-import { Transform } from 'stream';
 
 // Constants
 const DEFAULT_QUALITY = 80;
@@ -16,31 +15,28 @@ function shouldCompress(originType, originSize, isWebp) {
   );
 }
 
-// Function to compress an image stream directly with conditional resizing
+// Function to compress an image stream directly
 function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: false, animated: false });
-
-  // Disable caching for Sharp
   sharp.cache(0);
   sharp.concurrency(1);
   sharp.simd(true);
+  inputStream.pipe(sharpInstance);
 
-  // Fetch metadata to check the height
   sharpInstance
     .metadata()
     .then((metadata) => {
-      // If height exceeds MAX_HEIGHT, resize it
       if (metadata.height > MAX_HEIGHT) {
-        sharpInstance.resize({ height: MAX_HEIGHT, withoutEnlargement: true });
+        sharpInstance.resize({ height: MAX_HEIGHT });
       }
 
       if (grayscale) {
         sharpInstance.grayscale();
       }
 
-      // Process the image with the specified format and quality
+      // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality, effort: 1 })
+        .toFormat(format, { quality })
         .on("info", (info) => {
           // Set headers for the compressed image
           res.setHeader("Content-Type", `image/${format}`);
@@ -49,19 +45,16 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
         .on("data", (chunk) => {
-          // Write chunks to the response stream
-          res.write(Buffer.from(chunk));
+          const buffer = Buffer.from(chunk);
+          res.write(buffer);
         })
         .on("end", () => {
-          res.end(); // Ensure the response ends
-        })
+            res.end(); // Ensure the response ends after all chunks are sent
+           })
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
         });
-
-      // Pipe the input stream into the Sharp instance
-      inputStream.pipe(sharpInstance);
     })
     .catch((err) => {
       console.error("Error fetching metadata:", err.message);
@@ -90,7 +83,7 @@ export function fetchImageAndHandle(req, res) {
     }
 
     if (shouldCompress(originType, originSize, isWebp)) {
-      // Compress the stream with conditional resizing
+      // Compress the stream
       compressStream(response, format, quality, grayscale, res, originSize);
     } else {
       // Stream the original image to the response if compression is not needed
