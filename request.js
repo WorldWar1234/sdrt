@@ -1,13 +1,10 @@
 import https from 'https';
 import sharp from 'sharp';
-import { pipeline } from 'stream';
-import { promisify } from 'util';
+import { Transform } from 'stream';
 
+// Constants
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
-
-// Promisify the pipeline function for better error handling
-const pipelineAsync = promisify(pipeline);
 
 // Utility function to determine if compression is needed
 function shouldCompress(originType, originSize, isWebp) {
@@ -19,46 +16,57 @@ function shouldCompress(originType, originSize, isWebp) {
   );
 }
 
-// Function to handle conditional resizing and compression using Node pipelines
-async function compressStream(inputStream, format, quality, grayscale, res, originSize) {
-  try {
-    // Create a Sharp instance for image processing
-    const sharpInstance = sharp({ unlimited: false, animated: false });
+// Function to compress an image stream directly with conditional resizing
+function compressStream(inputStream, format, quality, grayscale, res, originSize) {
+  const sharpInstance = sharp({ unlimited: false, animated: false });
 
-    // Fetch metadata to determine if resizing is needed
-    const metadata = await sharpInstance.metadata();
-    const transforms = [];
+  // Disable caching for Sharp
+  sharp.cache(0);
+  sharp.concurrency(1);
+  sharp.simd(true);
 
-    if (metadata.height > MAX_HEIGHT) {
-      transforms.push(sharp().resize({ height: MAX_HEIGHT, withoutEnlargement: true }));
-    }
+  // Fetch metadata to check the height
+  sharpInstance
+    .metadata()
+    .then((metadata) => {
+      // If height exceeds MAX_HEIGHT, resize it
+      if (metadata.height > MAX_HEIGHT) {
+        sharpInstance.resize({ height: MAX_HEIGHT, withoutEnlargement: true });
+      }
 
-    if (grayscale) {
-      transforms.push(sharp().grayscale());
-    }
+      if (grayscale) {
+        sharpInstance.grayscale();
+      }
 
-    transforms.push(sharp().toFormat(format, { quality, effort: 0 }));
+      // Process the image with the specified format and quality
+      sharpInstance
+        .toFormat(format, { quality, effort: 1 })
+        .on("info", (info) => {
+          // Set headers for the compressed image
+          res.setHeader("Content-Type", `image/${format}`);
+          res.setHeader("X-Original-Size", originSize);
+          res.setHeader("X-Processed-Size", info.size);
+          res.setHeader("X-Bytes-Saved", originSize - info.size);
+        })
+        .on("data", (chunk) => {
+          // Write chunks to the response stream
+          res.write(Buffer.from(chunk));
+        })
+        .on("end", () => {
+          res.end(); // Ensure the response ends
+        })
+        .on("error", (err) => {
+          console.error("Error during compression:", err.message);
+          res.status(500).send("Error processing image.");
+        });
 
-    // Set headers once processing begins
-    transforms[transforms.length - 1].on("info", (info) => {
-      res.setHeader("Content-Type", `image/${format}`);
-      res.setHeader("X-Original-Size", originSize);
-      res.setHeader("X-Processed-Size", info.size);
-      res.setHeader("X-Bytes-Saved", originSize - info.size);
+      // Pipe the input stream into the Sharp instance
+      inputStream.pipe(sharpInstance);
+    })
+    .catch((err) => {
+      console.error("Error fetching metadata:", err.message);
+      res.status(500).send("Error processing image metadata.");
     });
-
-    // Use the pipeline to process the stream
-    await pipelineAsync(
-      inputStream,
-      ...transforms,
-      res
-    );
-
-    res.end(); // End the response
-  } catch (error) {
-    console.error("Error during compression:", error.message);
-    res.status(500).send("Error processing image.");
-  }
 }
 
 // Function to handle image compression requests
@@ -67,7 +75,7 @@ export function fetchImageAndHandle(req, res) {
   const isWebp = !req.query.jpeg;
   const grayscale = req.query.bw == "1";
   const quality = parseInt(req.query.quality, 10) || DEFAULT_QUALITY;
-  const format = isWebp ? "webp" : "jpeg";
+  const format = "png";
 
   if (!imageUrl) {
     return res.status(400).send("Image URL is required.");
@@ -88,12 +96,7 @@ export function fetchImageAndHandle(req, res) {
       // Stream the original image to the response if compression is not needed
       res.setHeader("Content-Type", originType);
       res.setHeader("Content-Length", originSize);
-      pipeline(response, res, (error) => {
-        if (error) {
-          console.error("Error streaming original image:", error.message);
-          res.status(500).send("Error streaming original image.");
-        }
-      });
+      response.pipe(res);
     }
   }).on("error", (error) => {
     console.error("Error fetching image:", error.message);
