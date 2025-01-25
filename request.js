@@ -1,5 +1,9 @@
 import https from 'https';
 import sharp from 'sharp';
+import { pipeline } from 'stream';
+import { promisify } from 'util';
+
+const pipelinePromise = promisify(pipeline);
 
 // Constants
 const DEFAULT_QUALITY = 80;
@@ -16,54 +20,43 @@ function shouldCompress(originType, originSize, isWebp) {
 }
 
 // Function to compress an image stream directly
-function compressStream(inputStream, format, quality, grayscale, res, originSize) {
+async function compressStream(inputStream, format, quality, grayscale, res, originSize) {
   const sharpInstance = sharp({ unlimited: false, animated: false });
   sharp.cache(0);
   sharp.concurrency(1);
   sharp.simd(true);
-  inputStream.pipe(sharpInstance);
 
-  sharpInstance
-    .metadata()
-    .then((metadata) => {
-      if (metadata.height > MAX_HEIGHT) {
-        sharpInstance.resize({ height: MAX_HEIGHT });
-      }
+  try {
+    const metadata = await sharpInstance.metadata();
+    if (metadata.height > MAX_HEIGHT) {
+      sharpInstance.resize({ height: MAX_HEIGHT });
+    }
 
-      if (grayscale) {
-        sharpInstance.grayscale();
-      }
+    if (grayscale) {
+      sharpInstance.grayscale();
+    }
 
-      // Process the image and send it in chunks
-      sharpInstance
-        .toFormat(format, { quality, effort:0 })
-        .on("info", (info) => {
-          // Set headers for the compressed image
-          res.setHeader("Content-Type", `image/${format}`);
-          res.setHeader("X-Original-Size", originSize);
-          res.setHeader("X-Processed-Size", info.size);
-          res.setHeader("X-Bytes-Saved", originSize - info.size);
-        })
-        .on("data", (chunk) => {
-          const buffer = Buffer.from(chunk);
-          res.write(buffer);
-        })
-        .on("end", () => {
-            res.end(); // Ensure the response ends after all chunks are sent
-           })
-        .on("error", (err) => {
-          console.error("Error during compression:", err.message);
-          res.status(500).send("Error processing image.");
-        });
-    })
-    .catch((err) => {
-      console.error("Error fetching metadata:", err.message);
-      res.status(500).send("Error processing image metadata.");
-    });
+    // Set headers for the compressed image
+    res.setHeader("Content-Type", `image/${format}`);
+    res.setHeader("X-Original-Size", originSize);
+
+    await pipelinePromise(
+      inputStream,
+      sharpInstance.toFormat(format, { quality, effort: 0 }),
+      res
+    );
+
+    // Set headers for the processed size after the pipeline completes
+    res.setHeader("X-Processed-Size", sharpInstance.size);
+    res.setHeader("X-Bytes-Saved", originSize - sharpInstance.size);
+  } catch (err) {
+    console.error("Error during compression:", err.message);
+    res.status(500).send("Error processing image.");
+  }
 }
 
 // Function to handle image compression requests
-export function fetchImageAndHandle(req, res) {
+export async function fetchImageAndHandle(req, res) {
   const imageUrl = req.query.url;
   const isWebp = !req.query.jpeg;
   const grayscale = req.query.bw == "1";
@@ -74,7 +67,7 @@ export function fetchImageAndHandle(req, res) {
     return res.status(400).send("Image URL is required.");
   }
 
-  https.get(imageUrl, (response) => {
+  https.get(imageUrl, async (response) => {
     const originType = response.headers["content-type"];
     const originSize = parseInt(response.headers["content-length"], 10) || 0;
 
@@ -84,12 +77,17 @@ export function fetchImageAndHandle(req, res) {
 
     if (shouldCompress(originType, originSize, isWebp)) {
       // Compress the stream
-      compressStream(response, format, quality, grayscale, res, originSize);
+      await compressStream(response, format, quality, grayscale, res, originSize);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader("Content-Type", originType);
       res.setHeader("Content-Length", originSize);
-      response.pipe(res);
+      pipeline(response, res, (err) => {
+        if (err) {
+          console.error("Error streaming image:", err.message);
+          res.status(500).send("Failed to stream the image.");
+        }
+      });
     }
   }).on("error", (error) => {
     console.error("Error fetching image:", error.message);
