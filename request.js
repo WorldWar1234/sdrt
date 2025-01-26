@@ -44,13 +44,14 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
           res.setHeader("X-Processed-Size", info.size);
           res.setHeader("X-Bytes-Saved", originSize - info.size);
         })
-        .on("data", (chunk) => {
+       /* .on("data", (chunk) => {
           const buffer = Buffer.from(chunk);
           res.write(buffer);
         })
         .on("end", () => {
             res.end(); // Ensure the response ends after all chunks are sent
-           })
+           })*/
+        .pipe(res)
         .on("error", (err) => {
           console.error("Error during compression:", err.message);
           res.status(500).send("Error processing image.");
