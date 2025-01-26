@@ -75,7 +75,7 @@ export function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
   
-  https.get(imageUrl, (response) => {
+  https.get(req.params.url, (response) => {
     req.params.originType = response.headers["content-type"];
     req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
 
