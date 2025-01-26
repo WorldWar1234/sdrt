@@ -2,21 +2,33 @@ import https from 'https';
 import sharp from 'sharp';
 
 // Constants
+const MIN_COMPRESS_LENGTH = 1024
+const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
 
 // Utility function to determine if compression is needed
-function shouldCompress(originType, originSize, isWebp) {
-  const MIN_COMPRESS_LENGTH = isWebp ? 10000 : 50000;
-  return (
-    originType.startsWith("image") &&
-    originSize >= MIN_COMPRESS_LENGTH &&
-    !originType.endsWith("gif") // Skip GIFs for simplicity
-  );
+function shouldCompress(req) {
+  const { originType, originSize, webp } = req.params
+
+  if (!originType.startsWith('image')) return false;
+  if (originSize === 0) return false;
+  if (req.headers.range) return false;
+  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
+  if (
+    !webp &&
+    (originType.endsWith('png') || originType.endsWith('gif')) &&
+    originSize < MIN_TRANSPARENT_COMPRESS_LENGTH
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 // Function to compress an image stream directly
-function compressStream(inputStream, format, req, res, originSize) {
+function compressStream(req, res, inputStream) {
+  const format = req.params.webp ? "webp" : "jpeg";
   const sharpInstance = sharp({ unlimited: false, animated: false });
   sharp.cache(0);
   sharp.concurrency(1);
@@ -36,7 +48,7 @@ function compressStream(inputStream, format, req, res, originSize) {
 
       // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality:req.params.quality, effort:0 })
+        .toFormat(format, { quality: req.params.quality, effort:0 })
         .on("info", (info) => {
           // Set headers for the compressed image
           res.setHeader("Content-Type", `image/${format}`);
@@ -65,27 +77,28 @@ function compressStream(inputStream, format, req, res, originSize) {
 
 // Function to handle image compression requests
 export function fetchImageAndHandle(req, res) {
-  const imageUrl = req.query.url;
-  const isWebp = !req.query.jpeg;
- req.params.grayscale = req.query.bw == "1";
- req.params.quality = parseInt(req.query.quality, 10) || DEFAULT_QUALITY;
-  const format = "webp";
-
-  if (!imageUrl) {
+  const url = req.query.url;
+  if (!url) {
     return res.status(400).send("Image URL is required.");
   }
-
+  req.params = {
+    url: decodeURIComponent(url),
+    webp: !req.query.jpeg,
+    grayscale: req.query.bw != 0,
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
+  };
+  
   https.get(imageUrl, (response) => {
-    const originType = response.headers["content-type"];
-    const originSize = parseInt(response.headers["content-length"], 10) || 0;
+    req.params.originType = response.headers["content-type"];
+    req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
 
     if (response.statusCode >= 400) {
       return res.status(response.statusCode).send("Failed to fetch the image.");
     }
 
-    if (shouldCompress(originType, originSize, isWebp)) {
+    if (shouldCompress(req)) {
       // Compress the stream
-      compressStream(response, format, req, res, originSize);
+      compressStream(req, res, response);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader("Content-Type", originType);
