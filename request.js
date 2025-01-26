@@ -29,15 +29,9 @@ function shouldCompress(req) {
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
   const format = req.params.webp ? "webp" : "jpeg";
-  const sharpInstance = sharp({ unlimited: true, animated: false });
+  const sharpInstance = sharp({ unlimited: true, animated: false, limitInputPixels:false });
 
-  inputStream
-    .pipe(sharpInstance) // Pipe input stream to Sharp for processing
-    .on("error", (err) => {
-      console.error("Error during image processing:", err.message);
-      res.statusCode = 500;
-      res.end("Failed to process image.");
-    });
+  inputStream.pipe(sharpInstance) // Pipe input stream to Sharp for processing
 
   // Handle metadata and apply transformations
   sharpInstance
@@ -54,7 +48,7 @@ function compress(req, res, inputStream) {
       // Pipe the processed image directly to the response
       res.setHeader("Content-Type", `image/${format}`);
       sharpInstance
-        .toFormat(format, { quality: req.params.quality, effort:0 })
+      .toFormat(format, { quality: req.params.quality, effort:0 })
       .on("info", (info) => {
           // Set headers for the compressed image
           res.setHeader("Content-Type", `image/${format}`);
