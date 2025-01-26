@@ -67,7 +67,7 @@ export function fetchImageAndHandle(req, res) {
         .on('end', async () => {
           try {
             const buffer = Buffer.concat(chunks);
-            const format = req.params.webp ? 'jpeg' : req.params.originType.split('/')[1];
+            const format = 'jpeg' : req.params.originType.split('/')[1];
 
             // Compress the image
             const compressedBuffer = await compressImage(buffer, format, req.params.quality);
