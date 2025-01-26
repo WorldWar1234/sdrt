@@ -27,51 +27,38 @@ function shouldCompress(req) {
 }
 
 // Function to compress an image stream directly
-function compressStream(req, res, inputStream) {
+function compress(req, res, inputStream) {
   const format = req.params.webp ? "webp" : "jpeg";
-  const sharpInstance = sharp({ unlimited: false, animated: false });
-  sharp.cache(0);
-  sharp.concurrency(1);
-  sharp.simd(true);
-  inputStream.pipe(sharpInstance);
+  const sharpInstance = sharp({ unlimited: true, animated: false });
 
+  inputStream
+    .pipe(sharpInstance) // Pipe input stream to Sharp for processing
+    .on("error", (err) => {
+      console.error("Error during image processing:", err.message);
+      res.statusCode = 500;
+      res.end("Failed to process image.");
+    });
+
+  // Handle metadata and apply transformations
   sharpInstance
     .metadata()
     .then((metadata) => {
-      if (metadata.height > MAX_HEIGHT) {
-        sharpInstance.resize({ height: MAX_HEIGHT });
+      if (metadata.height > 16383) {
+        sharpInstance.resize({ height: 16383 });
       }
 
       if (req.params.grayscale) {
         sharpInstance.grayscale();
       }
 
-      // Process the image and send it in chunks
-      sharpInstance
-        .toFormat(format, { quality: req.params.quality, effort:0 })
-        .on("info", (info) => {
-          // Set headers for the compressed image
-          res.setHeader("Content-Type", `image/${format}`);
-          res.setHeader("X-Original-Size", originSize);
-          res.setHeader("X-Processed-Size", info.size);
-          res.setHeader("X-Bytes-Saved", originSize - info.size);
-        })
-       /* .on("data", (chunk) => {
-          const buffer = Buffer.from(chunk);
-          res.write(buffer);
-        })
-        .on("end", () => {
-            res.end(); // Ensure the response ends after all chunks are sent
-           })*/
-        .pipe(res)
-        .on("error", (err) => {
-          console.error("Error during compression:", err.message);
-          res.status(500).send("Error processing image.");
-        });
+      // Pipe the processed image directly to the response
+      res.setHeader("Content-Type", `image/${format}`);
+      sharpInstance.toFormat(format, { quality: req.params.quality, effort:0 }).pipe(res);
     })
     .catch((err) => {
       console.error("Error fetching metadata:", err.message);
-      res.status(500).send("Error processing image metadata.");
+      res.statusCode = 500;
+      res.end("Failed to fetch image metadata.");
     });
 }
 
@@ -98,7 +85,7 @@ export function fetchImageAndHandle(req, res) {
 
     if (shouldCompress(req)) {
       // Compress the stream
-      compressStream(req, res, response);
+      compress(req, res, response);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader("Content-Type", originType);
