@@ -1,9 +1,11 @@
 import https from 'https';
 import gm from 'gm';
-import { Buffer } from 'buffer';
+import { Writable } from 'stream';
 
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Maximum allowed height
+const MIN_COMPRESS_LENGTH = 1024;
+const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
 // Utility function to check if compression is needed
 function shouldCompress(req) {
@@ -12,22 +14,31 @@ function shouldCompress(req) {
   if (!originType.startsWith('image')) return false;
   if (originSize === 0) return false;
   if (req.headers.range) return false;
+  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
+  if (
+    !webp &&
+    (originType.endsWith('png') || originType.endsWith('gif')) &&
+    originSize < MIN_TRANSPARENT_COMPRESS_LENGTH
+  ) {
+    return false;
+  }
 
   return true;
 }
 
-// Resize image height if it exceeds the maximum height
-async function resizeImageIfNeeded(buffer, format) {
+// Resize the image height if it exceeds the maximum height
+async function resizeImageIfNeeded(buffer, originType) {
   return new Promise((resolve, reject) => {
     gm(buffer)
-      .identify((err, metadata) => {
+      .identify((err, data) => {
         if (err) return reject(err);
 
-        // Resize only if height exceeds MAX_HEIGHT
-        if (metadata.size.height > MAX_HEIGHT) {
+        const { height } = data.size;
+        if (height > MAX_HEIGHT) {
+          console.log(`Resizing image from height ${height} to ${MAX_HEIGHT}`);
           gm(buffer)
-            .resize(null, MAX_HEIGHT) // Resize height, keeping aspect ratio
-            .toBuffer(format, (err, resizedBuffer) => {
+            .resize(null, MAX_HEIGHT) // Resize height, maintain aspect ratio
+            .toBuffer(originType.split('/')[1], (err, resizedBuffer) => {
               if (err) return reject(err);
               resolve(resizedBuffer);
             });
@@ -38,12 +49,12 @@ async function resizeImageIfNeeded(buffer, format) {
   });
 }
 
-// Compress an image buffer
-async function compressBuffer(buffer, format, quality) {
+// Compress the image buffer using gm
+async function compressBuffer(buffer, originType, quality) {
   return new Promise((resolve, reject) => {
     gm(buffer)
-      .quality(quality) // Set the quality
-      .toBuffer(format, (err, compressedBuffer) => {
+      .quality(quality)
+      .toBuffer(originType.split('/')[1], (err, compressedBuffer) => {
         if (err) return reject(err);
         resolve(compressedBuffer);
       });
@@ -76,17 +87,14 @@ export async function fetchImageAndHandle(req, res) {
         // Collect the stream into a buffer
         const buffer = await collectStreamToBuffer(response);
 
-        // Determine format (webp or original type)
-        const format = req.params.webp ? 'webp' : req.params.originType.split('/')[1];
-
         // Resize the image if needed
-        const resizedBuffer = await resizeImageIfNeeded(buffer, format);
+        const resizedBuffer = await resizeImageIfNeeded(buffer, req.params.originType);
 
         // Compress the resized image buffer
-        const compressedBuffer = await compressBuffer(resizedBuffer, format, req.params.quality);
+        const compressedBuffer = await compressBuffer(resizedBuffer, req.params.originType, req.params.quality);
 
         // Send the compressed image
-        res.setHeader('Content-Type', `image/${format}`);
+        res.setHeader('Content-Type', req.params.originType);
         res.setHeader('X-Original-Size', req.params.originSize);
         res.setHeader('X-Processed-Size', compressedBuffer.length);
         res.setHeader('X-Bytes-Saved', req.params.originSize - compressedBuffer.length);
