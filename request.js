@@ -1,8 +1,5 @@
 import https from 'https';
-import imagemin from 'imagemin';
-import imageminWebp from 'imagemin-webp';
-import imageminMozjpeg from 'imagemin-mozjpeg';
-import imageminPngquant from 'imagemin-pngquant';
+import Jimp from 'jimp';
 
 const DEFAULT_QUALITY = 80;
 const MIN_COMPRESS_LENGTH = 1024;
@@ -27,23 +24,22 @@ function shouldCompress(req) {
   return true;
 }
 
-// Function to compress an image buffer
-async function compressBuffer(buffer, format, quality) {
-  const plugins = [];
+// Function to compress the image buffer using Jimp
+async function compressImage(buffer, format, quality) {
+  const image = await Jimp.read(buffer);
 
-  if (format === 'webp') {
-    plugins.push(imageminWebp({ quality }));
-  } else if (format === 'jpeg') {
-    plugins.push(imageminMozjpeg({ quality }));
+  // Apply quality/compression based on format
+  if (format === 'jpeg' || format === 'jpg') {
+    image.quality(quality); // Set JPEG quality
   } else if (format === 'png') {
-    plugins.push(imageminPngquant({ quality: [quality / 100, quality / 100] }));
+    image.deflateLevel(9); // Max compression for PNG
   }
 
-  return await imagemin.buffer(buffer, { plugins });
+  return await image.getBufferAsync(`image/${format}`);
 }
 
-// Function to fetch and process the image
-export async function fetchImageAndHandle(req, res) {
+// Function to handle image requests and compression
+export function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.status(400).send('Image URL is required.');
@@ -55,7 +51,7 @@ export async function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  https.get(req.params.url, async (response) => {
+  https.get(req.params.url, (response) => {
     req.params.originType = response.headers['content-type'];
     req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
@@ -64,44 +60,41 @@ export async function fetchImageAndHandle(req, res) {
     }
 
     if (shouldCompress(req)) {
-      try {
-        // Collect the stream into a buffer
-        const buffer = await collectStreamToBuffer(response);
+      // Collect the incoming data chunks
+      const chunks = [];
+      response
+        .on('data', (chunk) => chunks.push(chunk))
+        .on('end', async () => {
+          try {
+            const buffer = Buffer.concat(chunks);
+            const format = req.params.webp ? 'jpeg' : req.params.originType.split('/')[1];
 
-        // Compress the image buffer
-        const format = req.params.webp ? 'webp' : req.params.originType.split('/')[1];
-        const compressedBuffer = await compressBuffer(buffer, format, req.params.quality);
+            // Compress the image
+            const compressedBuffer = await compressImage(buffer, format, req.params.quality);
 
-        // Send the compressed image
-        res.setHeader('Content-Type', `image/${format}`);
-        res.setHeader('X-Original-Size', req.params.originSize);
-        res.setHeader('X-Processed-Size', compressedBuffer.length);
-        res.setHeader('X-Bytes-Saved', req.params.originSize - compressedBuffer.length);
-        res.end(compressedBuffer);
-      } catch (error) {
-        console.error('Error during compression:', error.message);
-        res.status(500).send('Failed to compress the image.');
-      }
+            // Send the compressed image
+            res.setHeader('Content-Type', `image/${format}`);
+            res.setHeader('X-Original-Size', req.params.originSize);
+            res.setHeader('X-Processed-Size', compressedBuffer.length);
+            res.setHeader('X-Bytes-Saved', req.params.originSize - compressedBuffer.length);
+            res.end(compressedBuffer);
+          } catch (error) {
+            console.error('Error during compression:', error.message);
+            res.status(500).send('Failed to compress the image.');
+          }
+        })
+        .on('error', (error) => {
+          console.error('Error fetching image:', error.message);
+          res.status(500).send('Failed to fetch the image.');
+        });
     } else {
-      // Stream the original image if compression is not needed
+      // Stream the original image directly if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      response.pipe(res).on('error', (err) => {
-        console.error('Error streaming the image:', err.message);
-        res.status(500).send('Failed to stream the image.');
-      });
+      response.pipe(res);
     }
   }).on('error', (error) => {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
   });
-}
-
-// Utility to collect stream into a buffer
-async function collectStreamToBuffer(readable) {
-  const chunks = [];
-  for await (const chunk of readable) {
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
 }
