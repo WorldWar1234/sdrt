@@ -55,22 +55,20 @@ function compress(req, res, inputStream) {
       res.setHeader("Content-Type", `image/${format}`);
       sharpInstance
         .toFormat(format, { quality: req.params.quality, effort:0 })
-      /*.on("info", (info) => {
+      .on("info", (info) => {
           // Set headers for the compressed image
           res.setHeader("Content-Type", `image/${format}`);
           res.setHeader("X-Original-Size", req.params.originSize);
           res.setHeader("X-Processed-Size", info.size);
           res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
-        })*/
-        /*.on("data", (chunk) => {
+        })
+        .on("data", (chunk) => {
           const buffer = Buffer.from(chunk); // Convert chunk to buffer
           res.write(buffer); // Send the buffer chunk
         })
         .on("end", () => {
           res.end(); // Ensure the response ends after all chunks are sent
-        })*/
-      .pipe(res)
-      
+        })
     })
     .catch((err) => {
       console.error("Error fetching metadata:", err.message);
