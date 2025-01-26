@@ -1,17 +1,14 @@
 import https from 'https';
 import imagemin from 'imagemin';
+import imageminGm from 'imagemin-gm';
 import imageminWebp from 'imagemin-webp';
 import imageminMozjpeg from 'imagemin-mozjpeg';
 import imageminPngquant from 'imagemin-pngquant';
-import stream from 'stream';
-import { promisify } from 'util';
-
-// Promisify stream pipeline for easier handling
-const pipeline = promisify(stream.pipeline);
 
 const DEFAULT_QUALITY = 80;
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
+const MAX_HEIGHT = 16383;
 
 // Utility function to check if compression is needed
 function shouldCompress(req) {
@@ -47,6 +44,17 @@ async function compressBuffer(buffer, format, quality) {
   return await imagemin.buffer(buffer, { plugins });
 }
 
+// Function to resize the image if height exceeds MAX_HEIGHT
+async function resizeImage(buffer) {
+  return await imagemin.buffer(buffer, {
+    plugins: [
+      imageminGm({
+        resize: { height: MAX_HEIGHT },
+      }),
+    ],
+  });
+}
+
 // Function to fetch and process the image
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
@@ -70,12 +78,15 @@ export async function fetchImageAndHandle(req, res) {
 
     if (shouldCompress(req)) {
       try {
-        // Buffer the incoming image stream
-        const buffer = await streamToBuffer(response);
+        // Collect the stream into a buffer
+        const buffer = await collectStreamToBuffer(response);
+
+        // Resize the image if needed
+        const resizedBuffer = await resizeImage(buffer);
 
         // Compress the image buffer
         const format = req.params.webp ? 'webp' : req.params.originType.split('/')[1];
-        const compressedBuffer = await compressBuffer(buffer, format, req.params.quality);
+        const compressedBuffer = await compressBuffer(resizedBuffer, format, req.params.quality);
 
         // Send the compressed image
         res.setHeader('Content-Type', `image/${format}`);
@@ -91,7 +102,7 @@ export async function fetchImageAndHandle(req, res) {
       // Stream the original image if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      pipeline(response, res).catch((err) => {
+      response.pipe(res).on('error', (err) => {
         console.error('Error streaming the image:', err.message);
         res.status(500).send('Failed to stream the image.');
       });
@@ -102,10 +113,10 @@ export async function fetchImageAndHandle(req, res) {
   });
 }
 
-// Utility to convert stream to buffer
-async function streamToBuffer(stream) {
+// Utility to collect stream into a buffer
+async function collectStreamToBuffer(readable) {
   const chunks = [];
-  for await (const chunk of stream) {
+  for await (const chunk of readable) {
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
