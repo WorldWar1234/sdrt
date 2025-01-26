@@ -29,17 +29,10 @@ function shouldCompress(req) {
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
   const format = req.params.webp ? "webp" : "jpeg";
-  const sharpInstance = sharp({ unlimited: true, animated: false });
+  const sharpInstance = sharp({ unlimited: false, animated: false });
 
-  inputStream
-    .pipe(sharpInstance) // Pipe input stream to Sharp for processing
-    .on("error", (err) => {
-      console.error("Error during image processing:", err.message);
-      res.statusCode = 500;
-      res.end("Failed to process image.");
-    });
+  inputStream.pipe(sharpInstance);
 
-  // Handle metadata and apply transformations
   sharpInstance
     .metadata()
     .then((metadata) => {
@@ -47,18 +40,35 @@ function compress(req, res, inputStream) {
         sharpInstance.resize({ height: MAX_HEIGHT });
       }
 
-      if (req.params.grayscale) {
+      if (req.params grayscale) {
         sharpInstance.grayscale();
       }
 
-      // Pipe the processed image directly to the response
-      res.setHeader("Content-Type", `image/${format}`);
-      sharpInstance.toFormat(format, { quality: req.params.quality, effort:0 }).pipe(res);
+      // Process the image and send it in chunks
+      sharpInstance
+        .toFormat(format, { quality:req.params.quality, effort:0})
+        .on("info", (info) => {
+          // Set headers for the compressed image
+          res.setHeader("Content-Type", `image/${format}`);
+          res.setHeader("X-Original-Size", req.params.originSize);
+          res.setHeader("X-Processed-Size", info.size);
+          res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
+        })
+        .on("data", (chunk) => { 
+          const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(buffer); // Send the buffer chunk
+        })
+        .on("end", () => {
+          res.end(); // Ensure the response ends after all chunks are sent
+        })
+        .on("error", (err) => {
+          console.error("Error during compression:", err.message);
+          res.status(500).send("Error processing image.");
+        });
     })
     .catch((err) => {
       console.error("Error fetching metadata:", err.message);
-      res.statusCode = 500;
-      res.end("Failed to fetch image metadata.");
+      res.status(500).send("Error processing image metadata.");
     });
 }
 
