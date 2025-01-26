@@ -1,14 +1,9 @@
 import https from 'https';
-import sharp from 'sharp';
-import imagemin from 'imagemin';
-import imageminWebp from 'imagemin-webp';
-import imageminMozjpeg from 'imagemin-mozjpeg';
-import imageminPngquant from 'imagemin-pngquant';
+import gm from 'gm';
+import { Buffer } from 'buffer';
 
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Maximum allowed height
-const MIN_COMPRESS_LENGTH = 1024;
-const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
 // Utility function to check if compression is needed
 function shouldCompress(req) {
@@ -17,44 +12,42 @@ function shouldCompress(req) {
   if (!originType.startsWith('image')) return false;
   if (originSize === 0) return false;
   if (req.headers.range) return false;
-  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
-  if (
-    !webp &&
-    (originType.endsWith('png') || originType.endsWith('gif')) &&
-    originSize < MIN_TRANSPARENT_COMPRESS_LENGTH
-  ) {
-    return false;
-  }
 
   return true;
 }
 
 // Resize image height if it exceeds the maximum height
-async function resizeImageIfNeeded(buffer) {
-  const image = sharp(buffer);
-  const metadata = await image.metadata();
+async function resizeImageIfNeeded(buffer, format) {
+  return new Promise((resolve, reject) => {
+    gm(buffer)
+      .identify((err, metadata) => {
+        if (err) return reject(err);
 
-  if (metadata.height > MAX_HEIGHT) {
-    console.log(`Resizing image from height ${metadata.height} to ${MAX_HEIGHT}`);
-    return await image.resize({ height: MAX_HEIGHT }).toBuffer();
-  }
-
-  return buffer;
+        // Resize only if height exceeds MAX_HEIGHT
+        if (metadata.size.height > MAX_HEIGHT) {
+          gm(buffer)
+            .resize(null, MAX_HEIGHT) // Resize height, keeping aspect ratio
+            .toBuffer(format, (err, resizedBuffer) => {
+              if (err) return reject(err);
+              resolve(resizedBuffer);
+            });
+        } else {
+          resolve(buffer); // No resizing needed
+        }
+      });
+  });
 }
 
-// Function to compress an image buffer
+// Compress an image buffer
 async function compressBuffer(buffer, format, quality) {
-  const plugins = [];
-
-  if (format === 'webp') {
-    plugins.push(imageminWebp({ quality }));
-  } else if (format === 'jpeg') {
-    plugins.push(imageminMozjpeg({ quality }));
-  } else if (format === 'png') {
-    plugins.push(imageminPngquant({ quality: [quality / 100, quality / 100] }));
-  }
-
-  return await imagemin.buffer(buffer, { plugins });
+  return new Promise((resolve, reject) => {
+    gm(buffer)
+      .quality(quality) // Set the quality
+      .toBuffer(format, (err, compressedBuffer) => {
+        if (err) return reject(err);
+        resolve(compressedBuffer);
+      });
+  });
 }
 
 // Function to fetch and process the image
@@ -83,11 +76,13 @@ export async function fetchImageAndHandle(req, res) {
         // Collect the stream into a buffer
         const buffer = await collectStreamToBuffer(response);
 
+        // Determine format (webp or original type)
+        const format = req.params.webp ? 'webp' : req.params.originType.split('/')[1];
+
         // Resize the image if needed
-        const resizedBuffer = await resizeImageIfNeeded(buffer);
+        const resizedBuffer = await resizeImageIfNeeded(buffer, format);
 
         // Compress the resized image buffer
-        const format = req.params.webp ? 'webp' : req.params.originType.split('/')[1];
         const compressedBuffer = await compressBuffer(resizedBuffer, format, req.params.quality);
 
         // Send the compressed image
