@@ -1,11 +1,14 @@
 import https from 'https';
-import Jimp from 'jimp';
+import gm from 'gm';
+import { PassThrough } from 'stream';
 
-const DEFAULT_QUALITY = 80;
+// Constants
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
+const DEFAULT_QUALITY = 80;
+const MAX_HEIGHT = 16383; // Resize if height exceeds this value
 
-// Utility function to check if compression is needed
+// Utility function to determine if compression is needed
 function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
 
@@ -24,30 +27,44 @@ function shouldCompress(req) {
   return true;
 }
 
-// Function to compress the image buffer using Jimp
-async function compressImage(buffer, format, quality) {
-  const image = await Jimp.read(buffer);
+// Function to compress an image stream directly
+function compress(req, res, inputStream) {
+  const format = req.params.webp ? 'webp' : 'jpeg';
+  const quality = req.params.quality;
+  const passthrough = new PassThrough();
 
-  // Apply quality/compression based on format
-  if (format === 'jpeg' || format === 'jpg') {
-    image.quality(quality); // Set JPEG quality
-  } else if (format === 'png') {
-    image.deflateLevel(9); // Max compression for PNG
+  gm(inputStream)
+    .quality(quality)
+    .resize(null, MAX_HEIGHT > 0 ? MAX_HEIGHT : null) // Resize if height exceeds MAX_HEIGHT
+    .toBuffer(format, (err, buffer) => {
+      if (err) {
+        console.error('Error compressing image:', err.message);
+        res.statusCode = 500;
+        return res.end('Failed to compress image.');
+      }
+
+      res.setHeader('Content-Type', `image/${format}`);
+      res.setHeader('X-Original-Size', req.params.originSize);
+      res.setHeader('X-Processed-Size', buffer.length);
+      res.setHeader('X-Bytes-Saved', req.params.originSize - buffer.length);
+      res.end(buffer);
+    });
+
+  if (req.params.grayscale) {
+    gm(inputStream).colorspace(' Gray').stream();
   }
-
-  return await image.getBufferAsync(`image/${format}`);
 }
 
-// Function to handle image requests and compression
+// Function to handle image compression requests
 export function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.status(400).send('Image URL is required.');
   }
-
   req.params = {
     url: decodeURIComponent(url),
     webp: !req.query.jpeg,
+    grayscale: req.query.bw != 0,
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
@@ -60,35 +77,10 @@ export function fetchImageAndHandle(req, res) {
     }
 
     if (shouldCompress(req)) {
-      // Collect the incoming data chunks
-      const chunks = [];
-      response
-        .on('data', (chunk) => chunks.push(chunk))
-        .on('end', async () => {
-          try {
-            const buffer = Buffer.concat(chunks);
-            const format = 'jpeg' : req.params.originType.split('/')[1];
-
-            // Compress the image
-            const compressedBuffer = await compressImage(buffer, format, req.params.quality);
-
-            // Send the compressed image
-            res.setHeader('Content-Type', `image/${format}`);
-            res.setHeader('X-Original-Size', req.params.originSize);
-            res.setHeader('X-Processed-Size', compressedBuffer.length);
-            res.setHeader('X-Bytes-Saved', req.params.originSize - compressedBuffer.length);
-            res.end(compressedBuffer);
-          } catch (error) {
-            console.error('Error during compression:', error.message);
-            res.status(500).send('Failed to compress the image.');
-          }
-        })
-        .on('error', (error) => {
-          console.error('Error fetching image:', error.message);
-          res.status(500).send('Failed to fetch the image.');
-        });
+      // Compress the stream
+      compress(req, res, response);
     } else {
-      // Stream the original image directly if compression is not needed
+      // Stream the original image to the response if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
       response.pipe(res);
