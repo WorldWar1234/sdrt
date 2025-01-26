@@ -62,13 +62,14 @@ function compress(req, res, inputStream) {
           res.setHeader("X-Processed-Size", info.size);
           res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
         })
-        .on("data", (chunk) => {
+        /*.on("data", (chunk) => {
           const buffer = Buffer.from(chunk); // Convert chunk to buffer
           res.write(buffer); // Send the buffer chunk
         })
         .on("end", () => {
           res.end(); // Ensure the response ends after all chunks are sent
-        })
+        })*/
+      .pipe(res)
       
     })
     .catch((err) => {
