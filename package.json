@@ -13,6 +13,7 @@
   "dependencies": {
     "express": "4.21.2",
     "sharp": "^0.33.5",
+    "gm":"1.25.0",
     "jimp":"1.6.0",
     "imagemin": "9.0.0",
     "imagemin-webp":"8.0.0",
