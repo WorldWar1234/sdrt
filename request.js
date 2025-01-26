@@ -1,15 +1,18 @@
 import https from 'https';
 import sharp from 'sharp';
+import imagemin from 'imagemin';
+import imageminWebp from 'imagemin-webp';
+import imageminMozjpeg from 'imagemin-mozjpeg';
+import imageminPngquant from 'imagemin-pngquant';
 
-// Constants
-const MIN_COMPRESS_LENGTH = 1024
-const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
-const MAX_HEIGHT = 16383; // Resize if height exceeds this value
+const MAX_HEIGHT = 16383; // Maximum allowed height
+const MIN_COMPRESS_LENGTH = 1024;
+const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 
-// Utility function to determine if compression is needed
+// Utility function to check if compression is needed
 function shouldCompress(req) {
-  const { originType, originSize, webp } = req.params
+  const { originType, originSize, webp } = req.params;
 
   if (!originType.startsWith('image')) return false;
   if (originSize === 0) return false;
@@ -26,86 +29,97 @@ function shouldCompress(req) {
   return true;
 }
 
-// Function to compress an image stream directly
-function compress(req, res, inputStream) {
-  sharp.cache(false);
-  sharp.concurrency(1);
-  sharp.simd(true);
-  const format = req.params.webp ? "webp" : "jpeg";
-  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels:false });
+// Resize image height if it exceeds the maximum height
+async function resizeImageIfNeeded(buffer) {
+  const image = sharp(buffer);
+  const metadata = await image.metadata();
 
-  inputStream.pipe(sharpInstance) // Pipe input stream to Sharp for processing
+  if (metadata.height > MAX_HEIGHT) {
+    console.log(`Resizing image from height ${metadata.height} to ${MAX_HEIGHT}`);
+    return await image.resize({ height: MAX_HEIGHT }).toBuffer();
+  }
 
-  // Handle metadata and apply transformations
-  sharpInstance
-    .metadata()
-    .then((metadata) => {
-      if (metadata.height > 16383) {
-        sharpInstance.resize({ height: 16383 });
-      }
-
-      if (req.params.grayscale) {
-        sharpInstance.grayscale();
-      }
-
-      // Pipe the processed image directly to the response
-      res.setHeader("Content-Type", `image/${format}`);
-      sharpInstance
-      .toFormat(format, { quality: req.params.quality, effort:0 })
-      .on("info", (info) => {
-          // Set headers for the compressed image
-          res.setHeader("Content-Type", `image/${format}`);
-          res.setHeader("X-Original-Size", req.params.originSize);
-          res.setHeader("X-Processed-Size", info.size);
-          res.setHeader("X-Bytes-Saved", req.params.originSize - info.size);
-        })
-        .on("data", (chunk) => {
-          const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(buffer); // Send the buffer chunk
-        })
-        .on("end", () => {
-          res.end(); // Ensure the response ends after all chunks are sent
-        })
-    })
-    .catch((err) => {
-      console.error("Error fetching metadata:", err.message);
-      res.statusCode = 500;
-      res.end("Failed to fetch image metadata.");
-    });
+  return buffer;
 }
 
-// Function to handle image compression requests
-export function fetchImageAndHandle(req, res) {
+// Function to compress an image buffer
+async function compressBuffer(buffer, format, quality) {
+  const plugins = [];
+
+  if (format === 'webp') {
+    plugins.push(imageminWebp({ quality }));
+  } else if (format === 'jpeg') {
+    plugins.push(imageminMozjpeg({ quality }));
+  } else if (format === 'png') {
+    plugins.push(imageminPngquant({ quality: [quality / 100, quality / 100] }));
+  }
+
+  return await imagemin.buffer(buffer, { plugins });
+}
+
+// Function to fetch and process the image
+export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
-    return res.status(400).send("Image URL is required.");
+    return res.status(400).send('Image URL is required.');
   }
+
   req.params = {
     url: decodeURIComponent(url),
     webp: !req.query.jpeg,
-    grayscale: req.query.bw != 0,
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
-  
-  https.get(req.params.url, (response) => {
-    req.params.originType = response.headers["content-type"];
-    req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
+
+  https.get(req.params.url, async (response) => {
+    req.params.originType = response.headers['content-type'];
+    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     if (response.statusCode >= 400) {
-      return res.status(response.statusCode).send("Failed to fetch the image.");
+      return res.status(response.statusCode).send('Failed to fetch the image.');
     }
 
     if (shouldCompress(req)) {
-      // Compress the stream
-      compress(req, res, response);
+      try {
+        // Collect the stream into a buffer
+        const buffer = await collectStreamToBuffer(response);
+
+        // Resize the image if needed
+        const resizedBuffer = await resizeImageIfNeeded(buffer);
+
+        // Compress the resized image buffer
+        const format = req.params.webp ? 'webp' : req.params.originType.split('/')[1];
+        const compressedBuffer = await compressBuffer(resizedBuffer, format, req.params.quality);
+
+        // Send the compressed image
+        res.setHeader('Content-Type', `image/${format}`);
+        res.setHeader('X-Original-Size', req.params.originSize);
+        res.setHeader('X-Processed-Size', compressedBuffer.length);
+        res.setHeader('X-Bytes-Saved', req.params.originSize - compressedBuffer.length);
+        res.end(compressedBuffer);
+      } catch (error) {
+        console.error('Error during processing:', error.message);
+        res.status(500).send('Failed to process the image.');
+      }
     } else {
-      // Stream the original image to the response if compression is not needed
-      res.setHeader("Content-Type", originType);
-      res.setHeader("Content-Length", originSize);
-      response.pipe(res);
+      // Stream the original image if compression is not needed
+      res.setHeader('Content-Type', req.params.originType);
+      res.setHeader('Content-Length', req.params.originSize);
+      response.pipe(res).on('error', (err) => {
+        console.error('Error streaming the image:', err.message);
+        res.status(500).send('Failed to stream the image.');
+      });
     }
-  }).on("error", (error) => {
-    console.error("Error fetching image:", error.message);
-    res.status(500).send("Failed to fetch the image.");
+  }).on('error', (error) => {
+    console.error('Error fetching image:', error.message);
+    res.status(500).send('Failed to fetch the image.');
   });
+}
+
+// Utility to collect stream into a buffer
+async function collectStreamToBuffer(readable) {
+  const chunks = [];
+  for await (const chunk of readable) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
