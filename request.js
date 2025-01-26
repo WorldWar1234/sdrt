@@ -16,7 +16,7 @@ function shouldCompress(originType, originSize, isWebp) {
 }
 
 // Function to compress an image stream directly
-function compressStream(inputStream, format, quality, grayscale, res, originSize) {
+function compressStream(inputStream, format, req, res, originSize) {
   const sharpInstance = sharp({ unlimited: false, animated: false });
   sharp.cache(0);
   sharp.concurrency(1);
@@ -30,13 +30,13 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
         sharpInstance.resize({ height: MAX_HEIGHT });
       }
 
-      if (grayscale) {
+      if (req.params.grayscale) {
         sharpInstance.grayscale();
       }
 
       // Process the image and send it in chunks
       sharpInstance
-        .toFormat(format, { quality:10, effort:0 })
+        .toFormat(format, { quality:req.params.quality, effort:0 })
         .on("info", (info) => {
           // Set headers for the compressed image
           res.setHeader("Content-Type", `image/${format}`);
@@ -67,8 +67,8 @@ function compressStream(inputStream, format, quality, grayscale, res, originSize
 export function fetchImageAndHandle(req, res) {
   const imageUrl = req.query.url;
   const isWebp = !req.query.jpeg;
-  const grayscale = req.query.bw == "1";
-  const quality = parseInt(req.query.quality, 10) || DEFAULT_QUALITY;
+ req.params.grayscale = req.query.bw == "1";
+ req.params.quality = parseInt(req.query.quality, 10) || DEFAULT_QUALITY;
   const format = "webp";
 
   if (!imageUrl) {
@@ -85,7 +85,7 @@ export function fetchImageAndHandle(req, res) {
 
     if (shouldCompress(originType, originSize, isWebp)) {
       // Compress the stream
-      compressStream(response, format, quality, grayscale, res, originSize);
+      compressStream(response, format, req, res, originSize);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader("Content-Type", originType);
