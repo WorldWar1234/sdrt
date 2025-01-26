@@ -1,6 +1,5 @@
 import https from 'https';
-import gm from 'gm';
-import { PassThrough } from 'stream';
+import Jimp from 'jimp';
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -10,14 +9,13 @@ const MAX_HEIGHT = 16383; // Resize if height exceeds this value
 
 // Utility function to determine if compression is needed
 function shouldCompress(req) {
-  const { originType, originSize, webp } = req.params;
+  const { originType, originSize } = req.params;
 
   if (!originType.startsWith('image')) return false;
   if (originSize === 0) return false;
   if (req.headers.range) return false;
-  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
+  if (originSize < MIN_COMPRESS_LENGTH) return false;
   if (
-    !webp &&
     (originType.endsWith('png') || originType.endsWith('gif')) &&
     originSize < MIN_TRANSPARENT_COMPRESS_LENGTH
   ) {
@@ -28,30 +26,29 @@ function shouldCompress(req) {
 }
 
 // Function to compress an image stream directly
-function compress(req, res, inputStream) {
-  const format = req.params.webp ? 'webp' : 'jpeg';
-  const quality = req.params.quality;
-  const passthrough = new PassThrough();
+async function compress(req, res, inputStream) {
+  try {
+    const image = await Jimp.read(inputStream);
 
-  gm(inputStream)
-    .quality(quality)
-    .resize(null, MAX_HEIGHT > 0 ? MAX_HEIGHT : null) // Resize if height exceeds MAX_HEIGHT
-    .toBuffer(format, (err, buffer) => {
-      if (err) {
-        console.error('Error compressing image:', err.message);
-        res.statusCode = 500;
-        return res.end('Failed to compress image.');
-      }
+    if (req.params.grayscale) {
+      image.grayscale();
+    }
 
-      res.setHeader('Content-Type', `image/${format}`);
-      res.setHeader('X-Original-Size', req.params.originSize);
-      res.setHeader('X-Processed-Size', buffer.length);
-      res.setHeader('X-Bytes-Saved', req.params.originSize - buffer.length);
-      res.end(buffer);
-    });
+    if (image.getHeight() > MAX_HEIGHT) {
+      image.resize(Jimp.AUTO, MAX_HEIGHT);
+    }
 
-  if (req.params.grayscale) {
-    gm(inputStream).colorspace(' Gray').stream();
+    const buffer = await image.getBufferAsync(Jimp.MIME_JPEG, { quality: req.params.quality });
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('X-Original-Size', req.params.originSize);
+    res.setHeader('X-Processed-Size', buffer.length);
+    res.setHeader('X-Bytes-Saved', req.params.originSize - buffer.length);
+    res.end(buffer);
+  } catch (err) {
+    console.error('Error compressing image:', err.message);
+    res.statusCode = 500;
+    res.end('Failed to compress image.');
   }
 }
 
@@ -63,9 +60,8 @@ export function fetchImageAndHandle(req, res) {
   }
   req.params = {
     url: decodeURIComponent(url),
-    webp: !req.query.jpeg,
     grayscale: req.query.bw != 0,
-    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
+    quality: parseInt(req.query.q, 10) || DEFAULT_QUALITY,
   };
 
   https.get(req.params.url, (response) => {
