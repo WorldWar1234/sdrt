@@ -1,40 +1,50 @@
 import { request } from 'undici';
 
 // Constants
-const WSRV_URL = 'https://wsrv.nl/';
 const DEFAULT_QUALITY = 80;
+const MAX_HEIGHT = 16383; // Resize if height exceeds this value
+const STATICALLY_URL = 'https://cdn.statically.io'; // Statically.io base URL
 
-// Function to handle image compression requests using wsrv.nl
+// Function to generate a Statically.io URL
+function generateStaticallyUrl(url, options) {
+  const { webp, grayscale, quality, height } = options;
+  let staticallyUrl = `${STATICALLY_URL}/img/${encodeURIComponent(url)}`;
+
+  // Add query parameters for Statically.io
+  if (webp) staticallyUrl += '/f=webp';
+  if (grayscale) staticallyUrl += '/f=grayscale';
+  if (quality) staticallyUrl += `/q=${quality}`;
+  if (height) staticallyUrl += `/h=${height}`;
+
+  return staticallyUrl;
+}
+
+// Function to handle image compression requests
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.status(400).send('Image URL is required.');
   }
 
-  // Decode the URL and extract parameters
-  const imageUrl = decodeURIComponent(url);
-  const webp = !req.query.jpeg;
-  const grayscale = req.query.bw != 0;
-  const quality = parseInt(req.query.l, 10) || DEFAULT_QUALITY;
+  const options = {
+    webp: !req.query.jpeg,
+    grayscale: req.query.bw != 0,
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
+    height: MAX_HEIGHT,
+  };
 
   try {
-    // Construct the wsrv.nl URL with parameters
-    const wsrvParams = new URLSearchParams();
-    wsrvParams.set('url', imageUrl);
-    if (webp) wsrvParams.set('output', 'webp');
-    if (grayscale) wsrvParams.set('bw', '1');
-    wsrvParams.set('q', quality.toString());
+    // Generate Statically.io URL
+    const staticallyUrl = generateStaticallyUrl(decodeURIComponent(url), options);
 
-    const wsrvUrl = `${WSRV_URL}?${wsrvParams.toString()}`;
-
-    // Fetch the optimized image from wsrv.nl
-    const { body, headers, statusCode } = await request(wsrvUrl);
+    // Fetch the image from Statically.io
+    const { body, headers, statusCode } = await request(staticallyUrl);
 
     if (statusCode >= 400) {
       return res.status(statusCode).send('Failed to fetch the image.');
     }
 
-    // Stream the optimized image to the response
+    // Stream the processed image directly to the response
     res.setHeader('Content-Type', headers['content-type']);
     res.setHeader('Content-Length', headers['content-length']);
     body.pipe(res);
