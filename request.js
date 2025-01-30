@@ -1,15 +1,15 @@
 import { request } from 'undici';
 import sharp from 'sharp';
+import { PassThrough } from 'stream';
 
 // Constants (configurable via environment variables)
 const MIN_COMPRESS_LENGTH = parseInt(process.env.MIN_COMPRESS_LENGTH, 10) || 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = parseInt(process.env.DEFAULT_QUALITY, 10) || 80;
 const MAX_HEIGHT = parseInt(process.env.MAX_HEIGHT, 10) || 16383;
-const CACHE_ENABLED ='true';
 const CACHE_TTL = parseInt(process.env.CACHE_TTL, 10) || 3600; // Cache TTL in seconds
 
-// Cache setup (using a simple in-memory cache for demonstration)
+// Cache setup (using a simple in-memory cache)
 const cache = new Map();
 
 // Utility function to determine if compression is needed
@@ -102,11 +102,13 @@ export async function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  // Check cache for previously processed images
+  // Generate a cache key based on the request parameters
   const cacheKey = JSON.stringify(req.params);
-  if (CACHE_ENABLED && cache.has(cacheKey)) {
+
+  // Check cache for previously processed images
+  if (cache.has(cacheKey)) {
     const { headers, body } = cache.get(cacheKey);
-    headers['X-Cache'] = 'HIT';
+    headers['X-Cache'] = 'HIT'; // Indicate that the response is served from cache
     res.writeHead(200, headers);
     return body.pipe(res);
   }
@@ -122,28 +124,34 @@ export async function fetchImageAndHandle(req, res) {
     req.params.originType = headers['content-type'];
     req.params.originSize = parseInt(headers['content-length'], 10) || 0;
 
-    if (shouldCompress(req)) {
-      // Compress the image
-      await compress(req, res, body);
+    // Create a PassThrough stream to cache the response
+    const cacheStream = new PassThrough();
+    const chunks = [];
 
-      // Cache the compressed image (if enabled)
-      if (CACHE_ENABLED) {
-        const chunks = [];
-        const cacheStream = new PassThrough();
-        body.pipe(cacheStream).on('data', (chunk) => chunks.push(chunk));
-        cacheStream.on('end', () => {
-          cache.set(cacheKey, {
-            headers: res.getHeaders(),
-            body: Buffer.concat(chunks),
-          });
-        });
-      }
+    cacheStream.on('data', (chunk) => chunks.push(chunk));
+    cacheStream.on('end', () => {
+      // Cache the response
+      cache.set(cacheKey, {
+        headers: {
+          'Content-Type': req.params.originType,
+          'Content-Length': req.params.originSize,
+          'Cache-Control': `public, max-age=${CACHE_TTL}`,
+        },
+        body: Buffer.concat(chunks),
+      });
+    });
+
+    if (shouldCompress(req)) {
+      // Compress the image and pipe to both response and cache
+      await compress(req, res, body);
+      body.pipe(cacheStream);
     } else {
-      // Stream the original image
+      // Stream the original image to both response and cache
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
       res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
       body.pipe(res);
+      body.pipe(cacheStream);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
