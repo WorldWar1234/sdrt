@@ -1,73 +1,79 @@
 import { request } from 'undici';
 import sharp from 'sharp';
-import { PassThrough } from 'stream';
 
-// Constants (now mandatory)
+// Constants
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383;
 const CACHE_TTL = 3600; // 1 hour cache
 
-// Cache storage
-const cache = new Map();
+// Utility function to determine if compression is needed
+function shouldCompress(req) {
+  const { originType, originSize, webp } = req.params;
 
-// Utility function remains the same
-function shouldCompress(req) { /* ... */ }
+  if (!originType?.startsWith('image') || originSize === 0 || req.headers.range) {
+    return false;
+  }
 
-// Modified compress function to work with output streams
-async function compress(req, inputStream, outputStream) {
+  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
+  if (!webp && (originType.endsWith('png') || originType.endsWith('gif')) && originSize < MIN_TRANSPARENT_COMPRESS_LENGTH) {
+    return false;
+  }
+
+  return true;
+}
+
+// Function to compress an image stream directly
+async function compress(req, res, inputStream) {
   try {
     const format = req.params.webp ? 'webp' : 'jpeg';
     const sharpInstance = sharp({ unlimited: false, animated: false })
       .on('error', (err) => {
         console.error('Sharp error:', err);
-        outputStream.emit('error', err);
+        res.status(500).send('Image processing failed');
       });
 
-    // Pipe input to Sharp
     inputStream.pipe(sharpInstance);
 
-    // Handle metadata
     const metadata = await sharpInstance.metadata();
-    
-    // Apply transformations
+
+    // Resize if height exceeds the limit
     if (metadata.height > MAX_HEIGHT) {
       sharpInstance.resize({ height: MAX_HEIGHT });
     }
+
+    // Apply grayscale if requested
     if (req.params.grayscale) {
       sharpInstance.grayscale();
     }
 
-    // Configure output
-    sharpInstance
-      .toFormat(format, { 
-        quality: req.params.quality,
-        effort: 0 
-      })
-      .on('info', (info) => {
-        // Attach headers to output stream
-        outputStream.headers = {
-          'Content-Type': `image/${format}`,
-          'X-Original-Size': req.params.originSize,
-          'X-Processed-Size': info.size,
-          'X-Bytes-Saved': req.params.originSize - info.size,
-          'Cache-Control': `public, max-age=${CACHE_TTL}`
-        };
-      })
-      .pipe(outputStream);
+    // Set response headers for Cloudflare caching
+    res.setHeader('Content-Type', `image/${format}`);
+    res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
+    res.setHeader('CDN-Cache-Control', `public, max-age=${CACHE_TTL}`); // Cloudflare-specific
+    res.setHeader('Vary', 'Accept'); // Cache different versions based on Accept header
 
+    // Stream the processed image to the response
+    sharpInstance
+      .toFormat(format, { quality: req.params.quality, effort: 0 })
+      .on('info', (info) => {
+        res.setHeader('X-Original-Size', req.params.originSize);
+        res.setHeader('X-Processed-Size', info.size);
+        res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
+      })
+      .pipe(res);
   } catch (err) {
     console.error('Compression failed:', err);
-    outputStream.emit('error', err);
+    res.status(500).send('Failed to process the image.');
   }
 }
 
-// Main handler with proper caching
+// Function to handle image compression requests
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
 
-    // Validate URL
+  // Validate URL
   if (!url) {
     return res.status(400).send('Image URL is required.');
   }
@@ -90,79 +96,32 @@ export async function fetchImageAndHandle(req, res) {
     grayscale: req.query.bw !== '0',
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
-  // Create unique cache key
-  const cacheKey = JSON.stringify({
-    url: req.params.url,
-    webp: req.params.webp,
-    grayscale: req.params.grayscale,
-    quality: req.params.quality
-  });
-
-  // Serve from cache if available
-  if (cache.has(cacheKey)) {
-    const { headers, body } = cache.get(cacheKey);
-    res.writeHead(200, headers);
-    return res.end(body);
-  }
 
   try {
     const { body, headers, statusCode } = await request(req.params.url);
 
     // Handle failed origin fetch
     if (statusCode >= 400) {
-      return res.status(statusCode).send('Origin fetch failed');
+      return res.status(statusCode).send('Failed to fetch the image.');
     }
 
     req.params.originType = headers['content-type'];
     req.params.originSize = parseInt(headers['content-length'], 10) || 0;
 
     if (shouldCompress(req)) {
-      // Create processing pipeline
-      const processedOutput = new PassThrough();
-      const chunks = [];
-
-      // Capture compressed output
-      processedOutput
-        .on('data', chunk => chunks.push(chunk))
-        .on('end', () => {
-          cache.set(cacheKey, {
-            headers: processedOutput.headers || {},
-            body: Buffer.concat(chunks)
-          });
-        });
-
-      // Start compression and pipe to response
-      await compress(req, body, processedOutput);
-      
-      // Set headers and pipe to client
-      processedOutput
-        .on('headers', (headers) => {
-          res.writeHead(200, headers);
-        })
-        .pipe(res);
-
+      // Compress the image
+      await compress(req, res, body);
     } else {
-      // Handle non-compressed path
-      const chunks = [];
-      body
-        .on('data', chunk => chunks.push(chunk))
-        .on('end', () => {
-          const buffer = Buffer.concat(chunks);
-          cache.set(cacheKey, {
-            headers: {
-              'Content-Type': req.params.originType,
-              'Content-Length': buffer.length,
-              'Cache-Control': `public, max-age=${CACHE_TTL}`
-            },
-            body: buffer
-          });
-          res.writeHead(200, cache.get(cacheKey).headers);
-          res.end(buffer);
-        });
+      // Stream the original image with Cloudflare caching headers
+      res.setHeader('Content-Type', req.params.originType);
+      res.setHeader('Content-Length', req.params.originSize);
+      res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
+      res.setHeader('CDN-Cache-Control', `public, max-age=${CACHE_TTL}`); // Cloudflare-specific
+      res.setHeader('Vary', 'Accept'); // Cache different versions based on Accept header
+      body.pipe(res);
     }
-
   } catch (error) {
-    console.error('Request failed:', error);
-    res.status(500).send('Image processing error');
+    console.error('Error fetching image:', error.message);
+    res.status(500).send('Failed to fetch the image.');
   }
-            }
+}
