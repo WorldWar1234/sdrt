@@ -1,5 +1,6 @@
 import { request } from 'undici';
-import sharp from 'sharp';
+import gm from 'gm';
+import { PassThrough } from 'stream';
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -24,49 +25,42 @@ function shouldCompress(req) {
   return true;
 }
 
-// Function to compress an image stream directly
-async function compress(req, res, inputStream) {
-  try {
-    const format = req.params.webp ? 'webp' : 'jpeg';
-    const sharpInstance = sharp({ unlimited: false, animated: false })
-      .on('error', (err) => {
-        console.error('Sharp error:', err);
-        res.status(500).send('Image processing failed');
-      });
+// Function to compress an image stream directly using ImageMagick
+function compress(req, res, inputStream) {
+  const format = req.params.webp ? 'webp' : 'jpeg';
+  const outputStream = new PassThrough();
 
-    inputStream.pipe(sharpInstance);
+  // Create ImageMagick instance
+  const image = gm(inputStream);
 
-    const metadata = await sharpInstance.metadata();
+  // Resize if height exceeds the limit
+  image.resize(null, MAX_HEIGHT);
 
-    // Resize if height exceeds the limit
-    if (metadata.height > MAX_HEIGHT) {
-      sharpInstance.resize({ height: MAX_HEIGHT });
-    }
-
-    // Apply grayscale if requested
-    if (req.params.grayscale) {
-      sharpInstance.grayscale();
-    }
-
-    // Set response headers for Cloudflare caching
-    res.setHeader('Content-Type', `image/${format}`);
-    res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
-    res.setHeader('CDN-Cache-Control', `public, max-age=${CACHE_TTL}`); // Cloudflare-specific
-    res.setHeader('Vary', 'Accept'); // Cache different versions based on Accept header
-
-    // Stream the processed image to the response
-    sharpInstance
-      .toFormat(format, { quality: req.params.quality, effort: 0 })
-      .on('info', (info) => {
-        res.setHeader('X-Original-Size', req.params.originSize);
-        res.setHeader('X-Processed-Size', info.size);
-        res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
-      })
-      .pipe(res);
-  } catch (err) {
-    console.error('Compression failed:', err);
-    res.status(500).send('Failed to process the image.');
+  // Apply grayscale if requested
+  if (req.params.grayscale) {
+    image.grayscale();
   }
+
+  // Set output format and quality
+  image
+    .setFormat(format)
+    .quality(req.params.quality)
+    .stream((err, stdout) => {
+      if (err) {
+        console.error('ImageMagick error:', err);
+        res.status(500).send('Image processing failed');
+        return;
+      }
+
+      // Set response headers
+      res.setHeader('Content-Type', `image/${format}`);
+      res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
+      res.setHeader('Vary', 'Accept');
+
+      // Stream the processed image to the response
+      stdout.pipe(outputStream);
+      outputStream.pipe(res);
+    });
 }
 
 // Function to handle image compression requests
@@ -82,7 +76,6 @@ export async function fetchImageAndHandle(req, res) {
   let decodedUrl;
   try {
     decodedUrl = new URL(decodeURIComponent(url));
-    
     if (!['http:', 'https:'].includes(decodedUrl.protocol)) {
       return res.status(400).send('Invalid URL protocol.');
     }
@@ -110,15 +103,14 @@ export async function fetchImageAndHandle(req, res) {
     req.params.originSize = parseInt(headers['content-length'], 10) || 0;
 
     if (shouldCompress(req)) {
-      // Compress the image
-      await compress(req, res, body);
+      // Compress the image using ImageMagick
+      compress(req, res, body);
     } else {
-      // Stream the original image with Cloudflare caching headers
+      // Stream the original image with caching headers
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
       res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
-      res.setHeader('CDN-Cache-Control', `public, max-age=${CACHE_TTL}`); // Cloudflare-specific
-      res.setHeader('Vary', 'Accept'); // Cache different versions based on Accept header
+      res.setHeader('Vary', 'Accept');
       body.pipe(res);
     }
   } catch (error) {
