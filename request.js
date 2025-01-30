@@ -92,7 +92,7 @@ export async function fetchImageAndHandle(req, res) {
 
   // Set request parameters
   req.params = {
-    url: url,
+    url: decodedUrl.toString(),
     webp: !req.query.jpeg,
     grayscale: req.query.bw !== '0',
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
