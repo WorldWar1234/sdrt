@@ -82,7 +82,7 @@ export async function fetchImageAndHandle(req, res) {
   let decodedUrl;
   try {
     //decodedUrl = new URL(decodeURIComponent(url));
-    decodedUrl= req.query.url;
+    decodedUrl= url;
     if (!['http:', 'https:'].includes(decodedUrl.protocol)) {
       return res.status(400).send('Invalid URL protocol.');
     }
