@@ -81,8 +81,8 @@ export async function fetchImageAndHandle(req, res) {
   // Decode and validate the URL to prevent SSRF
   let decodedUrl;
   try {
-    //decodedUrl = new URL(decodeURIComponent(url));
-    decodedUrl= url;
+    decodedUrl = new URL(decodeURIComponent(url));
+    
     if (!['http:', 'https:'].includes(decodedUrl.protocol)) {
       return res.status(400).send('Invalid URL protocol.');
     }
@@ -92,7 +92,7 @@ export async function fetchImageAndHandle(req, res) {
 
   // Set request parameters
   req.params = {
-    url: decodedUrl.toString(),
+    url: url,
     webp: !req.query.jpeg,
     grayscale: req.query.bw !== '0',
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
