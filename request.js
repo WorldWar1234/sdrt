@@ -1,6 +1,5 @@
 import { request } from 'undici';
-import gm from 'gm';
-import { PassThrough } from 'stream';
+import imagemagick from 'imagemagick';
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -26,41 +25,45 @@ function shouldCompress(req) {
 }
 
 // Function to compress an image stream directly using ImageMagick
-function compress(req, res, inputStream) {
-  const format = req.params.webp ? 'webp' : 'jpeg';
-  const outputStream = new PassThrough();
+async function compress(req, res, inputStream) {
+  try {
+    const format = req.params.webp ? 'webp' : 'jpeg';
+    const quality = req.params.quality || DEFAULT_QUALITY;
+    const args = ['-', '-resize', `x${MAX_HEIGHT}`, '-quality', quality, '-format', format, '-'];
 
-  // Create ImageMagick instance
-  const image = gm(inputStream);
+    // If grayscale is requested, apply it
+    if (req.params.grayscale) {
+      args.push('-colorspace', 'Gray');
+    }
 
-  // Resize if height exceeds the limit
-  image.resize(null, MAX_HEIGHT);
+    // Set response headers
+    res.setHeader('Content-Type', `image/${format}`);
+    res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
+    res.setHeader('CDN-Cache-Control', `public, max-age=${CACHE_TTL}`);
+    res.setHeader('Vary', 'Accept');
 
-  // Apply grayscale if requested
-  if (req.params.grayscale) {
-    image.grayscale();
-  }
+    // Process the image using ImageMagick
+    const convert = imagemagick.convert;
 
-  // Set output format and quality
-  image
-    .setFormat(format)
-    .quality(req.params.quality)
-    .stream((err, stdout) => {
+    convert([inputStream, ...args], (err, stdout, stderr) => {
       if (err) {
-        console.error('ImageMagick error:', err);
-        res.status(500).send('Image processing failed');
-        return;
+        console.error('ImageMagick error:', stderr || err);
+        return res.status(500).send('Image processing failed');
       }
 
-      // Set response headers
-      res.setHeader('Content-Type', `image/${format}`);
-      res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
-      res.setHeader('Vary', 'Accept');
+      // Get the processed image's size
+      const processedSize = Buffer.byteLength(stdout);
 
-      // Stream the processed image to the response
-      stdout.pipe(outputStream);
-      outputStream.pipe(res);
+      // Send the image back as a response
+      res.setHeader('X-Processed-Size', processedSize);
+      res.setHeader('X-Original-Size', req.params.originSize);
+      res.setHeader('X-Bytes-Saved', req.params.originSize - processedSize);
+      res.end(stdout);
     });
+  } catch (err) {
+    console.error('Compression failed:', err);
+    res.status(500).send('Failed to process the image.');
+  }
 }
 
 // Function to handle image compression requests
@@ -104,12 +107,13 @@ export async function fetchImageAndHandle(req, res) {
 
     if (shouldCompress(req)) {
       // Compress the image using ImageMagick
-      compress(req, res, body);
+      await compress(req, res, body);
     } else {
-      // Stream the original image with caching headers
+      // Stream the original image with Cloudflare caching headers
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
       res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
+      res.setHeader('CDN-Cache-Control', `public, max-age=${CACHE_TTL}`);
       res.setHeader('Vary', 'Accept');
       body.pipe(res);
     }
