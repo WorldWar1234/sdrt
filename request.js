@@ -1,22 +1,23 @@
 import { request } from 'undici';
 import sharp from 'sharp';
-import { PassThrough } from 'stream';
+import { pipeline } from 'stream';
+import { promisify } from 'util';
+
+const pipe = promisify(pipeline);
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
-const MAX_HEIGHT = 16383;
-const CACHE_TTL = 3600; // 1 hour cache
+const MAX_HEIGHT = 16383; // Resize if height exceeds this value
 
 // Utility function to determine if compression is needed
 function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
 
-  if (!originType?.startsWith('image') || originSize === 0 || req.headers.range) {
-    return false;
-  }
-
+  if (!originType?.startsWith('image')) return false;
+  if (!originSize) return false;
+  if (req.headers.range) return false;
   if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
   if (!webp && (originType.endsWith('png') || originType.endsWith('gif')) && originSize < MIN_TRANSPARENT_COMPRESS_LENGTH) {
     return false;
@@ -25,50 +26,38 @@ function shouldCompress(req) {
   return true;
 }
 
-// Function to compress an image stream directly using PassThrough
+// Function to compress an image stream
 async function compress(req, res, inputStream) {
   try {
+    sharp.cache(false);
+    sharp.concurrency(1);
+    sharp.simd(true);
+
     const format = req.params.webp ? 'webp' : 'jpeg';
-    const passThrough = new PassThrough();
-
-    const sharpInstance = sharp({ unlimited: false, animated: false })
-      .on('error', (err) => {
-        console.error('Sharp error:', err);
-        res.status(500).send('Image processing failed');
-      });
-
-    inputStream.pipe(sharpInstance);
+    const sharpInstance = sharp().on('error', (err) => {
+      console.error('Sharp processing error:', err.message);
+      res.status(500).send('Image processing failed.');
+    });
 
     const metadata = await sharpInstance.metadata();
-
-    // Resize if height exceeds the limit
     if (metadata.height > MAX_HEIGHT) {
       sharpInstance.resize({ height: MAX_HEIGHT });
     }
 
-    // Apply grayscale if requested
     if (req.params.grayscale) {
       sharpInstance.grayscale();
     }
 
-    // Set response headers for caching and content type
     res.setHeader('Content-Type', `image/${format}`);
-    res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
-    res.setHeader('CDN-Cache-Control', `public, max-age=${CACHE_TTL}`);
-    res.setHeader('Vary', 'Accept');
+    inputStream.pipe(sharpInstance);
 
-    // Stream the processed image through PassThrough
-    sharpInstance
-      .toFormat(format, { quality: req.params.quality, effort: 0 })
-      .on('info', (info) => {
-        res.setHeader('X-Original-Size', req.params.originSize);
-        res.setHeader('X-Processed-Size', info.size);
-        res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
-      })
-      .pipe(passThrough)
-      .pipe(res);
+    await pipe(
+      sharpInstance.toFormat(format, { quality: req.params.quality, effort: 0 }),
+      res
+    );
+
   } catch (err) {
-    console.error('Compression failed:', err);
+    console.error('Compression failed:', err.message);
     res.status(500).send('Failed to process the image.');
   }
 }
@@ -76,55 +65,33 @@ async function compress(req, res, inputStream) {
 // Function to handle image compression requests
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
-
-  // Validate URL
   if (!url) {
     return res.status(400).send('Image URL is required.');
   }
 
-  // Decode and validate the URL to prevent SSRF
-  let decodedUrl;
-  try {
-    decodedUrl = new URL(decodeURIComponent(url));
-    if (!['http:', 'https:'].includes(decodedUrl.protocol)) {
-      return res.status(400).send('Invalid URL protocol.');
-    }
-  } catch (err) {
-    return res.status(400).send('Invalid URL.');
-  }
-
-  // Set request parameters
   req.params = {
-    url: decodedUrl.toString(),
+    url: decodeURIComponent(url),
     webp: !req.query.jpeg,
-    grayscale: req.query.bw !== '0',
+    grayscale: req.query.bw != 0,
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
   try {
     const { body, headers, statusCode } = await request(req.params.url);
 
-    // Handle failed origin fetch
+    req.params.originType = headers['content-type'];
+    req.params.originSize = parseInt(headers['content-length'], 10) || 0;
+
     if (statusCode >= 400) {
       return res.status(statusCode).send('Failed to fetch the image.');
     }
 
-    req.params.originType = headers['content-type'];
-    req.params.originSize = parseInt(headers['content-length'], 10) || 0;
-
     if (shouldCompress(req)) {
-      // Compress the image
       await compress(req, res, body);
     } else {
-      // Stream the original image with Cloudflare caching headers
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
-      res.setHeader('CDN-Cache-Control', `public, max-age=${CACHE_TTL}`);
-      res.setHeader('Vary', 'Accept');
-
-      const passThrough = new PassThrough();
-      body.pipe(passThrough).pipe(res);
+      await pipe(body, res);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
