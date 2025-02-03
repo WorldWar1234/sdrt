@@ -58,11 +58,12 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Processed-Size', info.size);
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
-        .pipe(res)
-        .on('error', (err) => {
-          console.error('Error processing image:', err.message);
-          res.statusCode = 500;
-          res.end('Failed to process the image.');
+        .on('data', (chunk) => {
+          const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(buffer); // Send the buffer chunk
+        })
+        .on('end', () => {
+          res.end(); // Ensure the response ends after all chunks are sent
         });
     })
     .catch((err) => {
@@ -87,24 +88,33 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     // Use superagent to stream the image
-    const response = await superagent.get(req.params.url).responseType('stream');
+    const request = superagent.get(req.params.url);
 
     // Handle response headers
-    req.params.originType = response.headers['content-type'];
-    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
+    request.on('response', (response) => {
+      req.params.originType = response.headers['content-type'];
+      req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
-    if (response.status >= 400) {
-      return res.status(response.status).send('Failed to fetch the image.');
-    }
+      if (response.statusCode >= 400) {
+        return res.status(response.statusCode).send('Failed to fetch the image.');
+      }
 
-    if (shouldCompress(req)) {
-      // Compress the stream
-      compress(req, res, response.body);
-    } else {
-      // Stream the original image to the response if compression is not needed
-      res.setHeader('Content-Type', req.params.originType);
-      response.body.pipe(res);
-    }
+      if (shouldCompress(req)) {
+        // Compress the stream
+        compress(req, res, request);
+      } else {
+        // Stream the original image to the response if compression is not needed
+        res.setHeader('Content-Type', req.params.originType);
+        res.setHeader('Content-Length', req.params.originSize);
+        request.pipe(res);
+      }
+    });
+
+    // Handle errors
+    request.on('error', (error) => {
+      console.error('Error fetching image:', error.message);
+      res.status(500).send('Failed to fetch the image.');
+    });
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
