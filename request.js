@@ -103,8 +103,8 @@ export async function fetchImageAndHandle(req, res) {
       compress(req, res, response.data);
     } else {
       // Stream the original image to the response if compression is not needed
-      /*res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);*/
+      res.setHeader('Content-Type', req.params.originType);
+      res.setHeader('Content-Length', req.params.originSize);
       response.data.pipe(res);
     }
   } catch (error) {
