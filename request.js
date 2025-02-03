@@ -88,7 +88,7 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     // Use needle to stream the image
-    const stream = needle("get",req.params.url);
+    const stream = needle.get(req.params.url);
 
     // Handle response headers
     stream.on('header', (statusCode, headers) => {
@@ -105,7 +105,6 @@ export async function fetchImageAndHandle(req, res) {
       } else {
         // Stream the original image to the response if compression is not needed
         res.setHeader('Content-Type', req.params.originType);
-        res.setHeader('Content-Length', req.params.originSize);
         stream.pipe(res);
       }
     });
