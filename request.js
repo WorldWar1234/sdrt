@@ -22,7 +22,7 @@ function shouldCompress(req) {
   ) {
     return false;
   }
-
+}
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
   sharp.cache(false);
