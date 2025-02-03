@@ -104,8 +104,6 @@ export async function fetchImageAndHandle(req, res) {
         compress(req, res, stream);
       } else {
         // Stream the original image to the response if compression is not needed
-        res.setHeader('Content-Type', req.params.originType);
-        res.setHeader('Content-Length', req.params.originSize);
         stream.pipe(res);
       }
     });
