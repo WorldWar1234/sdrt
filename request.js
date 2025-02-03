@@ -64,7 +64,7 @@ function compress(req, res, inputStream) {
         })
         .on('end', () => {
           res.end(); // Ensure the response ends after all chunks are sent
-        });
+        })
         .on('error', (err) => {
           console.error('Error processing image:', err.message);
           res.statusCode = 500;
