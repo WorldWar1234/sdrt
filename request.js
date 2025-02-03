@@ -57,8 +57,8 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
         .on('data', (chunk) => {
-          const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(buffer); // Send the buffer chunk
+         // const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(chunk); // Send the buffer chunk
         })
         .on('end', () => {
           res.end(); // Ensure the response ends after all chunks are sent
@@ -103,8 +103,6 @@ export async function fetchImageAndHandle(req, res) {
       compress(req, res, response.data);
     } else {
       // Stream the original image to the response if compression is not needed
-     /* res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);*/
       response.data.pipe(res);
     }
   } catch (error) {
