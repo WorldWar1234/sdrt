@@ -1,4 +1,4 @@
-import superagent from 'superagent';
+import needle from 'needle';
 import sharp from 'sharp';
 
 // Constants
@@ -7,12 +7,26 @@ const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
 
-// Utility function to determine if compression is needed (unchanged)
+// Utility function to determine if compression is needed
 function shouldCompress(req) {
-  // ... keep existing implementation
+  const { originType, originSize, webp } = req.params;
+
+  if (!originType.startsWith('image')) return false;
+  if (originSize === 0) return false;
+  if (req.headers.range) return false;
+  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
+  if (
+    !webp &&
+    (originType.endsWith('png') || originType.endsWith('gif')) &&
+    originSize < MIN_TRANSPARENT_COMPRESS_LENGTH
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
-// Modified compress function to handle stream errors
+// Function to compress an image stream directly
 function compress(req, res, inputStream) {
   sharp.cache(false);
   sharp.concurrency(1);
@@ -42,7 +56,7 @@ function compress(req, res, inputStream) {
 
       // Set response headers
       res.setHeader('Content-Type', `image/${format}`);
-      
+
       // Create processing pipeline
       const pipeline = sharpInstance
         .toFormat(format, { quality: req.params.quality, effort: 0 })
@@ -68,7 +82,7 @@ function compress(req, res, inputStream) {
     });
 }
 
-// Modified fetch function using Superagent
+// Function to handle image compression requests using Needle
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
@@ -82,45 +96,28 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const { headers, statusCode, stream } = await new Promise((resolve, reject) => {
-      const request = superagent.get(req.params.url)
-        .buffer(false)
-        .parse((res, callback) => {
-          // Keep the stream flowing without buffering
-          res.on('data', () => {});
-          res.on('end', () => callback());
-        })
-        .on('response', (response) => {
-          if (response.status >= 400) {
-            reject(new Error(`HTTP ${response.status}`));
-            return;
-          }
-          resolve({
-            headers: response.headers,
-            statusCode: response.status,
-            stream: request
-          });
-        })
-        .on('error', reject);
-    });
+    const response = await needle('get', req.params.url, { parse: false });
 
-    req.params.originType = headers['content-type'];
-    req.params.originSize = parseInt(headers['content-length'], 10) || 0;
+    if (response.statusCode >= 400) {
+      return res.status(response.statusCode).send('Failed to fetch the image.');
+    }
+
+    req.params.originType = response.headers['content-type'];
+    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     if (shouldCompress(req)) {
-      compress(req, res, stream);
+      // Compress the stream
+      compress(req, res, response);
     } else {
+      // Stream the original image to the response if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
       if (req.params.originSize > 0) {
         res.setHeader('Content-Length', req.params.originSize);
       }
-      stream.pipe(res);
+      response.pipe(res);
     }
   } catch (error) {
-    console.error('Fetch error:', error.message);
-    const statusCode = error.message.startsWith('HTTP ') 
-      ? parseInt(error.message.split(' ')[1]) 
-      : 500;
-    res.status(statusCode).send('Failed to fetch image');
+    console.error('Error fetching image:', error.message);
+    res.status(500).send('Failed to fetch the image.');
   }
 }
