@@ -1,4 +1,4 @@
-import needle from 'needle';
+import got from 'got';
 import sharp from 'sharp';
 
 // Constants
@@ -87,16 +87,16 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Use needle to stream the image
-    const stream = needle.get(req.params.url);
+    // Use got to stream the image
+    const stream = got.stream(req.params.url);
 
     // Handle response headers
-    stream.on('header', (statusCode, headers) => {
-      req.params.originType = headers['content-type'];
-      req.params.originSize = parseInt(headers['content-length'], 10) || 0;
+    stream.on('response', (response) => {
+      req.params.originType = response.headers['content-type'];
+      req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
-      if (statusCode >= 400) {
-        return res.status(statusCode).send('Failed to fetch the image.');
+      if (response.statusCode >= 400) {
+        return res.status(response.statusCode).send('Failed to fetch the image.');
       }
 
       if (shouldCompress(req)) {
