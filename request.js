@@ -96,7 +96,7 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await needle('get', req.params.url, { parse: false });
+    const response = await needle.get(req.params.url);
 
     if (response.statusCode >= 400) {
       return res.status(response.statusCode).send('Failed to fetch the image.');
