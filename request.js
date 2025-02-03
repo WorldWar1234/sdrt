@@ -1,18 +1,19 @@
-import axios from 'axios';
+import needle from 'needle';
 import sharp from 'sharp';
 
 // Constants
-const MIN_COMPRESS_LENGTH = 1024
-const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100
+const MIN_COMPRESS_LENGTH = 1024;
+const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
 
 // Utility function to determine if compression is needed
 function shouldCompress(req) {
-  const { originType, originSize, webp } = req.params
+  const { originType, originSize, webp } = req.params;
 
   if (!originType.startsWith('image')) return false;
   if (originSize === 0) return false;
+  if (req.headers.range) return false;
   if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
   if (
     !webp &&
@@ -24,6 +25,7 @@ function shouldCompress(req) {
 
   return true;
 }
+
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
   sharp.cache(false);
@@ -57,8 +59,8 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
         .on('data', (chunk) => {
-         // const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(chunk); // Send the buffer chunk
+          const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(buffer); // Send the buffer chunk
         })
         .on('end', () => {
           res.end(); // Ensure the response ends after all chunks are sent
@@ -85,26 +87,34 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await axios({
-      method: 'get',
-      url: req.params.url,
-      responseType: 'stream',
+    // Use needle to stream the image
+    const stream = needle.get(req.params.url);
+
+    // Handle response headers
+    stream.on('header', (statusCode, headers) => {
+      req.params.originType = headers['content-type'];
+      req.params.originSize = parseInt(headers['content-length'], 10) || 0;
+
+      if (statusCode >= 400) {
+        return res.status(statusCode).send('Failed to fetch the image.');
+      }
+
+      if (shouldCompress(req)) {
+        // Compress the stream
+        compress(req, res, stream);
+      } else {
+        // Stream the original image to the response if compression is not needed
+        res.setHeader('Content-Type', req.params.originType);
+        res.setHeader('Content-Length', req.params.originSize);
+        stream.pipe(res);
+      }
     });
 
-    req.params.originType = response.headers['content-type'];
-    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
-
-    if (response.status >= 400) {
-      return res.status(response.status).send('Failed to fetch the image.');
-    }
-
-    if (shouldCompress(req)) {
-      // Compress the stream
-      compress(req, res, response.data);
-    } else {
-      // Stream the original image to the response if compression is not needed
-      response.data.pipe(res);
-    }
+    // Handle errors
+    stream.on('error', (error) => {
+      console.error('Error fetching image:', error.message);
+      res.status(500).send('Failed to fetch the image.');
+    });
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
