@@ -60,7 +60,7 @@ function compress(req, res, inputStream) {
         })
         .on('data', (chunk) => {
           //const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(chunks); // Send the buffer chunk
+          res.write(chunk); // Send the buffer chunk
         })
         .on('end', () => {
           res.end(); // Ensure the response ends after all chunks are sent
