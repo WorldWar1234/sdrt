@@ -58,12 +58,11 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Processed-Size', info.size);
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
-        .on('data', (chunk) => {
-         // const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(chunk); // Send the buffer chunk
-        })
-        .on('end', () => {
-          res.end(); // Ensure the response ends after all chunks are sent
+        .pipe(res)
+        .on('error', (err) => {
+          console.error('Error processing image:', err.message);
+          res.statusCode = 500;
+          res.end('Failed to process the image.');
         });
     })
     .catch((err) => {
@@ -104,6 +103,7 @@ export async function fetchImageAndHandle(req, res) {
         compress(req, res, stream);
       } else {
         // Stream the original image to the response if compression is not needed
+        res.setHeader('Content-Type', req.params.originType);
         stream.pipe(res);
       }
     });
