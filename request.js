@@ -58,12 +58,11 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Processed-Size', info.size);
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
-        .on('data', (chunk) => {
-          const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(buffer); // Send the buffer chunk
-        })
-        .on('end', () => {
-          res.end(); // Ensure the response ends after all chunks are sent
+        .pipe(res)
+        .on('error', (err) => {
+          console.error('Error processing image:', err.message);
+          res.statusCode = 500;
+          res.end('Failed to process the image.');
         });
     })
     .catch((err) => {
@@ -88,10 +87,10 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     // Use superagent to stream the image
-    const request = superagent.get(req.params.url);
+    const stream = superagent.get(req.params.url);
 
     // Handle response headers
-    request.on('response', (response) => {
+    stream.on('response', (response) => {
       req.params.originType = response.headers['content-type'];
       req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
@@ -101,17 +100,16 @@ export async function fetchImageAndHandle(req, res) {
 
       if (shouldCompress(req)) {
         // Compress the stream
-        compress(req, res, request);
+        compress(req, res, stream);
       } else {
         // Stream the original image to the response if compression is not needed
         res.setHeader('Content-Type', req.params.originType);
-        res.setHeader('Content-Length', req.params.originSize);
-        request.pipe(res);
+        stream.pipe(res);
       }
     });
 
     // Handle errors
-    request.on('error', (error) => {
+    stream.on('error', (error) => {
       console.error('Error fetching image:', error.message);
       res.status(500).send('Failed to fetch the image.');
     });
