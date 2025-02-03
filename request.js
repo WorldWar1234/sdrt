@@ -1,4 +1,4 @@
-import superagent from 'superagent';
+import needle from 'needle';
 import sharp from 'sharp';
 
 // Constants
@@ -58,11 +58,12 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Processed-Size', info.size);
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
-        .pipe(res)
-        .on('error', (err) => {
-          console.error('Error processing image:', err.message);
-          res.statusCode = 500;
-          res.end('Failed to process the image.');
+        .on('data', (chunk) => {
+          const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(buffer); // Send the buffer chunk
+        })
+        .on('end', () => {
+          res.end(); // Ensure the response ends after all chunks are sent
         });
     })
     .catch((err) => {
@@ -86,16 +87,16 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Use superagent to stream the image
-    const stream = superagent.get(req.params.url);
+    // Use needle to stream the image
+    const stream = needle.get(req.params.url);
 
     // Handle response headers
-    stream.on('response', (response) => {
-      req.params.originType = response.headers['content-type'];
-      req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
+    stream.on('header', (statusCode, headers) => {
+      req.params.originType = headers['content-type'];
+      req.params.originSize = parseInt(headers['content-length'], 10) || 0;
 
-      if (response.statusCode >= 400) {
-        return res.status(response.statusCode).send('Failed to fetch the image.');
+      if (statusCode >= 400) {
+        return res.status(statusCode).send('Failed to fetch the image.');
       }
 
       if (shouldCompress(req)) {
