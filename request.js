@@ -1,4 +1,4 @@
-import got from 'got';
+import superagent from 'superagent';
 import sharp from 'sharp';
 
 // Constants
@@ -86,33 +86,25 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Use got to stream the image
-    const stream = got.stream(req.params.url);
+    // Use superagent to stream the image
+    const response = await superagent.get(req.params.url).responseType('stream');
 
     // Handle response headers
-    stream.on('response', (response) => {
-      req.params.originType = response.headers['content-type'];
-      req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
+    req.params.originType = response.headers['content-type'];
+    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
-      if (response.statusCode >= 400) {
-        return res.status(response.statusCode).send('Failed to fetch the image.');
-      }
+    if (response.status >= 400) {
+      return res.status(response.status).send('Failed to fetch the image.');
+    }
 
-      if (shouldCompress(req)) {
-        // Compress the stream
-        compress(req, res, stream);
-      } else {
-        // Stream the original image to the response if compression is not needed
-        res.setHeader('Content-Type', req.params.originType);
-        stream.pipe(res);
-      }
-    });
-
-    // Handle errors
-    stream.on('error', (error) => {
-      console.error('Error fetching image:', error.message);
-      res.status(500).send('Failed to fetch the image.');
-    });
+    if (shouldCompress(req)) {
+      // Compress the stream
+      compress(req, res, response.body);
+    } else {
+      // Stream the original image to the response if compression is not needed
+      res.setHeader('Content-Type', req.params.originType);
+      response.body.pipe(res);
+    }
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
