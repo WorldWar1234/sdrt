@@ -2,14 +2,14 @@ import axios from 'axios';
 import sharp from 'sharp';
 
 // Constants
-const MIN_COMPRESS_LENGTH = 1024;
-const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
+const MIN_COMPRESS_LENGTH = 1024
+const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
 
 // Utility function to determine if compression is needed
 function shouldCompress(req) {
-  const { originType, originSize, webp } = req.params;
+  const { originType, originSize, webp } = req.params
 
   if (!originType.startsWith('image')) return false;
   if (originSize === 0) return false;
@@ -22,9 +22,6 @@ function shouldCompress(req) {
   ) {
     return false;
   }
-
-  return true;
-}
 
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
@@ -100,15 +97,15 @@ export async function fetchImageAndHandle(req, res) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
 
-  //  if (shouldCompress(req)) {
+    if (shouldCompress(req)) {
       // Compress the stream
       compress(req, res, response.data);
-    /*} else {
+    } else {
       // Stream the original image to the response if compression is not needed
-      res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);
+      /*res.setHeader('Content-Type', req.params.originType);
+      res.setHeader('Content-Length', req.params.originSize);*/
       response.data.pipe(res);
-    }*/
+    }
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
