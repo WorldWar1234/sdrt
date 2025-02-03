@@ -13,7 +13,6 @@ function shouldCompress(req) {
 
   if (!originType.startsWith('image')) return false;
   if (originSize === 0) return false;
-  if (req.headers.range) return false;
   if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
   if (
     !webp &&
@@ -22,6 +21,8 @@ function shouldCompress(req) {
   ) {
     return false;
   }
+
+  return true;
 }
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
