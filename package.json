@@ -13,7 +13,7 @@
   "dependencies": {
     "express": "4.21.2",
     "sharp": "^0.33.5",
-    "undici":"7.3.0"
+    "axios":"1.7.9"
   },
   "engines": {
     "node": "22.x"
