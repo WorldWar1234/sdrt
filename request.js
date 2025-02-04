@@ -28,13 +28,15 @@ function shouldCompress(req) {
 
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
+  // Disable caching and set concurrency options for sharp
   sharp.cache(false);
   sharp.concurrency(1);
   sharp.simd(true);
   const format = req.params.webp ? 'webp' : 'jpeg';
   const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
-  inputStream.pipe(sharpInstance); // Pipe input stream to Sharp for processing
+  // Pipe the input stream to Sharp for processing
+  inputStream.pipe(sharpInstance);
 
   // Handle metadata and apply transformations
   sharpInstance
@@ -48,8 +50,9 @@ function compress(req, res, inputStream) {
         sharpInstance.grayscale();
       }
 
-      // Pipe the processed image directly to the response
+      // Set the response Content-Type header
       res.setHeader('Content-Type', `image/${format}`);
+      // Pipe the processed image directly to the response
       sharpInstance
         .toFormat(format, { quality: req.params.quality, effort: 0 })
         .on('info', (info) => {
@@ -59,11 +62,11 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
         .on('data', (chunk) => {
-          const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(buffer); // Send the buffer chunk
+          const buffer = Buffer.from(chunk);
+          res.write(buffer);
         })
         .on('end', () => {
-          res.end(); // Ensure the response ends after all chunks are sent
+          res.end();
         });
     })
     .catch((err) => {
@@ -73,21 +76,25 @@ function compress(req, res, inputStream) {
     });
 }
 
-// Function to handle image compression requests
-export async function fetchImageAndHandle(req, res) {
+// Function to handle image compression requests using simple-get
+export function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.status(400).send('Image URL is required.');
   }
   req.params = {
     url: decodeURIComponent(url),
-    webp: !req.query.jpeg,
+    webp: !req.query.jpeg, // if query parameter "jpeg" is provided, do not convert to webp
     grayscale: req.query.bw != 0,
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  try {
-    const response = await get.concat(req.params.url);
+  // Fetch the image using simple-get
+  get(req.params.url, (err, response) => {
+    if (err) {
+      console.error('Error fetching image:', err.message);
+      return res.status(500).send('Failed to fetch the image.');
+    }
 
     req.params.originType = response.headers['content-type'];
     req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
@@ -98,15 +105,12 @@ export async function fetchImageAndHandle(req, res) {
 
     if (shouldCompress(req)) {
       // Compress the stream
-      compress(req, res, response.body);
+      compress(req, res, response);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);
-      res.end(response.body);
+     // res.setHeader('Content-Length', req.params.originSize);
+      response.pipe(res);
     }
-  } catch (error) {
-    console.error('Error fetching image:', error.message);
-    res.status(500).send('Failed to fetch the image.');
-  }
+  });
 }
