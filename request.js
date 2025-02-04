@@ -111,8 +111,8 @@ export function fetchImageAndHandle(req, res) {
       compress(req, res, imageRequest);
     } else {
       // If no compression is needed, stream the original image directly.
-      res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);
+    //  res.setHeader('Content-Type', req.params.originType);
+    //  res.setHeader('Content-Length', req.params.originSize);
       imageRequest.pipe(res);
     }
   });
