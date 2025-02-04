@@ -15,7 +15,7 @@
     "sharp": "^0.33.5",
     "got":"14.4.5",
     "simple-get":"4.0.1",
-    "phin":"3.7.1"
+    "request":"2.88.2"
   },
   "engines": {
     "node": "22.x"
