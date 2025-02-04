@@ -1,11 +1,5 @@
-import got from 'got';
+import http from 'stream-http'; // Use stream-http for HTTP requests
 import sharp from 'sharp';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import { promisify } from 'util';
-
-const unlink = promisify(fs.unlink);
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -32,54 +26,63 @@ function shouldCompress(req) {
   return true;
 }
 
-// Function to compress an image from a file
-async function compressFromFile(req, res, filePath) {
+// Function to compress an image stream directly
+function compress(req, res, inputStream) {
   sharp.cache(false);
   sharp.concurrency(1);
   sharp.simd(true);
   const format = req.params.webp ? 'webp' : 'jpeg';
-  const sharpInstance = sharp(filePath, { unlimited: false, animated: false, limitInputPixels: false });
+  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
-  // Handle metadata and apply transformations
-  try {
-    const metadata = await sharpInstance.metadata();
-    if (metadata.height > MAX_HEIGHT) {
-      sharpInstance.resize({ height: MAX_HEIGHT });
-    }
+  // Handle input stream errors
+  inputStream.on('error', (err) => {
+    console.error('Input stream error:', err);
+    if (!res.headersSent) res.status(500).send('Image download failed');
+    sharpInstance.destroy();
+  });
 
-    if (req.params.grayscale) {
-      sharpInstance.grayscale();
-    }
+  inputStream.pipe(sharpInstance);
 
-    // Pipe the processed image directly to the response
-    res.setHeader('Content-Type', `image/${format}`);
-    sharpInstance
-      .toFormat(format, { quality: req.params.quality, effort: 0 })
-      .on('info', (info) => {
-        // Set headers for the compressed image
-        res.setHeader('X-Original-Size', req.params.originSize);
-        res.setHeader('X-Processed-Size', info.size);
-        res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
-      })
-      .pipe(res)
-      .on('error', (err) => {
-        console.error('Error processing image:', err.message);
-        res.statusCode = 500;
-        res.end('Failed to process the image.');
-      })
-      .on('finish', async () => {
-        // Clean up the temporary file
-        await unlink(filePath);
+  sharpInstance
+    .metadata()
+    .then((metadata) => {
+      if (metadata.height > MAX_HEIGHT) {
+        sharpInstance.resize({ height: MAX_HEIGHT });
+      }
+
+      if (req.params.grayscale) {
+        sharpInstance.grayscale();
+      }
+
+      // Set response headers
+      res.setHeader('Content-Type', `image/${format}`);
+
+      // Create processing pipeline
+      const pipeline = sharpInstance
+        .toFormat(format, { quality: req.params.quality, effort: 0 })
+        .on('info', (info) => {
+          res.setHeader('X-Original-Size', req.params.originSize);
+          res.setHeader('X-Processed-Size', info.size);
+          res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
+        });
+
+      // Handle pipeline errors
+      pipeline.on('error', (err) => {
+        console.error('Processing error:', err);
+        if (!res.headersSent) res.status(500).send('Image processing failed');
+        inputStream.destroy();
       });
-  } catch (err) {
-    console.error('Error fetching metadata:', err.message);
-    res.statusCode = 500;
-    res.end('Failed to fetch image metadata.');
-    await unlink(filePath);
-  }
+
+      // Stream processed image to response
+      pipeline.pipe(res);
+    })
+    .catch((err) => {
+      console.error('Metadata error:', err);
+      if (!res.headersSent) res.status(500).send('Image processing failed');
+    });
 }
 
-// Function to handle image compression requests
+// Function to handle image compression requests using stream-http
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
@@ -93,11 +96,17 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Use got to stream the image
-    const stream = got.stream(req.params.url);
+    // Use stream-http to make the request
+    const requestOptions = new URL(req.params.url);
+    const httpRequest = http.request({
+      hostname: requestOptions.hostname,
+      path: requestOptions.pathname,
+      protocol: requestOptions.protocol,
+      method: 'GET',
+    });
 
-    // Handle response headers
-    stream.on('response', async (response) => {
+    // Handle the response
+    httpRequest.on('response', (response) => {
       req.params.originType = response.headers['content-type'];
       req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
@@ -106,35 +115,26 @@ export async function fetchImageAndHandle(req, res) {
       }
 
       if (shouldCompress(req)) {
-        // Write the stream to a temporary file
-        const tempDir = os.tmpdir();
-        const tempFilePath = path.join(tempDir, `temp-${Date.now()}.jpg`);
-        const writeStream = fs.createWriteStream(tempFilePath);
-
-        stream.pipe(writeStream);
-
-        writeStream.on('finish', () => {
-          // Compress the image from the temporary file
-          compressFromFile(req, res, tempFilePath);
-        });
-
-        writeStream.on('error', (error) => {
-          console.error('Error writing to temporary file:', error.message);
-          res.status(500).send('Failed to write the image to a temporary file.');
-          unlink(tempFilePath).catch(console.error);
-        });
+        // Compress the stream
+        compress(req, res, response);
       } else {
         // Stream the original image to the response if compression is not needed
         res.setHeader('Content-Type', req.params.originType);
-        stream.pipe(res);
+        if (req.params.originSize > 0) {
+          res.setHeader('Content-Length', req.params.originSize);
+        }
+        response.pipe(res);
       }
     });
 
-    // Handle errors
-    stream.on('error', (error) => {
-      console.error('Error fetching image:', error.message);
+    // Handle request errors
+    httpRequest.on('error', (err) => {
+      console.error('Request error:', err);
       res.status(500).send('Failed to fetch the image.');
     });
+
+    // End the request
+    httpRequest.end();
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
