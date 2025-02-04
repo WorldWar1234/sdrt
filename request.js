@@ -34,15 +34,9 @@ function compress(req, res, inputStream) {
   const format = req.params.webp ? 'webp' : 'jpeg';
   const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
-  // Handle input stream errors
-  inputStream.on('error', (err) => {
-    console.error('Input stream error:', err);
-    if (!res.headersSent) res.status(500).send('Image download failed');
-    sharpInstance.destroy();
-  });
+  inputStream.pipe(sharpInstance); // Pipe input stream to Sharp for processing
 
-  inputStream.pipe(sharpInstance);
-
+  // Handle metadata and apply transformations
   sharpInstance
     .metadata()
     .then((metadata) => {
@@ -54,31 +48,28 @@ function compress(req, res, inputStream) {
         sharpInstance.grayscale();
       }
 
-      // Set response headers
+      // Pipe the processed image directly to the response
       res.setHeader('Content-Type', `image/${format}`);
-
-      // Create processing pipeline
-      const pipeline = sharpInstance
+      sharpInstance
         .toFormat(format, { quality: req.params.quality, effort: 0 })
         .on('info', (info) => {
+          // Set headers for the compressed image
           res.setHeader('X-Original-Size', req.params.originSize);
           res.setHeader('X-Processed-Size', info.size);
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
+        })
+        .on('data', (chunk) => {
+          const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(buffer); // Send the buffer chunk
+        })
+        .on('end', () => {
+          res.end(); // Ensure the response ends after all chunks are sent
         });
-
-      // Handle pipeline errors
-      pipeline.on('error', (err) => {
-        console.error('Processing error:', err);
-        if (!res.headersSent) res.status(500).send('Image processing failed');
-        inputStream.destroy();
-      });
-
-      // Stream processed image to response
-      pipeline.pipe(res);
     })
     .catch((err) => {
-      console.error('Metadata error:', err);
-      if (!res.headersSent) res.status(500).send('Image processing failed');
+      console.error('Error fetching metadata:', err.message);
+      res.statusCode = 500;
+      res.end('Failed to fetch image metadata.');
     });
 }
 
