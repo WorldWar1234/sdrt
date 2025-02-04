@@ -1,4 +1,4 @@
-import http from 'stream-http'; // Use stream-http for HTTP requests
+import get from 'simple-get';
 import sharp from 'sharp';
 
 // Constants
@@ -73,7 +73,7 @@ function compress(req, res, inputStream) {
     });
 }
 
-// Function to handle image compression requests using stream-http
+// Function to handle image compression requests
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
@@ -87,39 +87,24 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Use stream-http to make the request
-    const httpRequest = http.request(req.params.url);
+    const response = await get(req.params.url);
 
-    // Handle the response
-    httpRequest.on('response', (response) => {
-      req.params.originType = response.headers['content-type'];
-      req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
+    req.params.originType = response.headers['content-type'];
+    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
-      if (response.statusCode >= 400) {
-        return res.status(response.statusCode).send('Failed to fetch the image.');
-      }
+    if (response.statusCode >= 400) {
+      return res.status(response.statusCode).send('Failed to fetch the image.');
+    }
 
-      if (shouldCompress(req)) {
-        // Compress the stream
-        compress(req, res, response);
-      } else {
-        // Stream the original image to the response if compression is not needed
-        res.setHeader('Content-Type', req.params.originType);
-        if (req.params.originSize > 0) {
-          res.setHeader('Content-Length', req.params.originSize);
-        }
-        response.pipe(res);
-      }
-    });
-
-    // Handle request errors
-    httpRequest.on('error', (err) => {
-      console.error('Request error:', err);
-      res.status(500).send('Failed to fetch the image.');
-    });
-
-    // End the request
-    httpRequest.end();
+    if (shouldCompress(req)) {
+      // Compress the stream
+      compress(req, res, response);
+    } else {
+      // Stream the original image to the response if compression is not needed
+      res.setHeader('Content-Type', req.params.originType);
+      res.setHeader('Content-Length', req.params.originSize);
+      response.pipe(res);
+    }
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
