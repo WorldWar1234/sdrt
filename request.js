@@ -1,5 +1,6 @@
-import phin from 'phin';
+import request from 'request';
 import sharp from 'sharp';
+import { Readable } from 'stream';
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -28,19 +29,17 @@ function shouldCompress(req) {
 
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
+  // Configure Sharp's behavior
   sharp.cache(false);
   sharp.concurrency(1);
   sharp.simd(true);
   const format = req.params.webp ? 'webp' : 'jpeg';
-  const sharpInstance = sharp({
-    unlimited: false,
-    animated: false,
-    limitInputPixels: false,
-  });
+  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
-  inputStream.pipe(sharpInstance); // Pipe input stream to Sharp for processing
+  // Pipe the input stream to Sharp for processing
+  inputStream.pipe(sharpInstance);
 
-  // Handle metadata and apply transformations
+  // Process metadata to check for resize and apply transformations
   sharpInstance
     .metadata()
     .then((metadata) => {
@@ -52,10 +51,8 @@ function compress(req, res, inputStream) {
         sharpInstance.grayscale();
       }
 
-      // Set the Content-Type header before processing
+      // Set the content type and output format
       res.setHeader('Content-Type', `image/${format}`);
-
-      // Pipe the processed image directly to the response
       sharpInstance
         .toFormat(format, { quality: req.params.quality, effort: 0 })
         .on('info', (info) => {
@@ -65,11 +62,11 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
         .on('data', (chunk) => {
-          const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          const buffer = Buffer.from(chunk); // Convert chunk to a Buffer
           res.write(buffer); // Send the buffer chunk
         })
         .on('end', () => {
-          res.end(); // Ensure the response ends after all chunks are sent
+          res.end(); // End the response once all chunks have been sent
         });
     })
     .catch((err) => {
@@ -80,43 +77,48 @@ function compress(req, res, inputStream) {
 }
 
 // Function to handle image compression requests
-export async function fetchImageAndHandle(req, res) {
+export function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.status(400).send('Image URL is required.');
   }
+
   req.params = {
     url: decodeURIComponent(url),
-    webp: !req.query.jpeg, // Use webp unless jpeg is explicitly requested
+    // If the query string contains "jpeg", then do not use webp.
+    webp: !req.query.jpeg,
+    // If "bw" is not zero then use grayscale
     grayscale: req.query.bw != 0,
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  try {
-    // Use phin to fetch the image with streaming enabled
-    const { body, headers, statusCode } = await phin({
-      url: req.params.url,
-      stream: true,
-    });
+  // Create a streaming request using the request npm package.
+  const imageRequest = request.get({ url: req.params.url, encoding: null });
 
-    req.params.originType = headers['content-type'];
-    req.params.originSize = parseInt(headers['content-length'], 10) || 0;
-
-    if (statusCode >= 400) {
-      return res.status(statusCode).send('Failed to fetch the image.');
+  // Listen for the response event to access headers and statusCode.
+  imageRequest.on('response', (response) => {
+    if (response.statusCode >= 400) {
+      res.status(response.statusCode).send('Failed to fetch the image.');
+      return;
     }
+
+    // Extract the content type and content length from response headers.
+    req.params.originType = response.headers['content-type'];
+    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     if (shouldCompress(req)) {
-      // Compress the stream
-      compress(req, res, body);
+      // If compression is needed, pipe the request stream to our compress function.
+      compress(req, res, imageRequest);
     } else {
-      // Stream the original image to the response if compression is not needed
+      // If no compression is needed, stream the original image directly.
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      body.pipe(res);
+      imageRequest.pipe(res);
     }
-  } catch (error) {
+  });
+
+  imageRequest.on('error', (error) => {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
-  }
+  });
 }
