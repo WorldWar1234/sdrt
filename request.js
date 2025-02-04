@@ -1,5 +1,6 @@
-import get from 'simple-get';
+import http from 'stream-http';
 import sharp from 'sharp';
+import { URL } from 'url';
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -28,12 +29,16 @@ function shouldCompress(req) {
 
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
-  // Disable caching and set concurrency options for sharp
+  // Configure sharp settings
   sharp.cache(false);
   sharp.concurrency(1);
   sharp.simd(true);
   const format = req.params.webp ? 'webp' : 'jpeg';
-  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
+  const sharpInstance = sharp({
+    unlimited: false,
+    animated: false,
+    limitInputPixels: false,
+  });
 
   // Pipe the input stream to Sharp for processing
   inputStream.pipe(sharpInstance);
@@ -52,7 +57,8 @@ function compress(req, res, inputStream) {
 
       // Set the response Content-Type header
       res.setHeader('Content-Type', `image/${format}`);
-      // Pipe the processed image directly to the response
+
+      // Convert to the desired format and quality
       sharpInstance
         .toFormat(format, { quality: req.params.quality, effort: 0 })
         .on('info', (info) => {
@@ -62,8 +68,8 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
         .on('data', (chunk) => {
-          const buffer = Buffer.from(chunk);
-          res.write(buffer);
+          // Write each chunk of data to the response
+          res.write(Buffer.from(chunk));
         })
         .on('end', () => {
           res.end();
@@ -76,11 +82,12 @@ function compress(req, res, inputStream) {
     });
 }
 
-// Function to handle image compression requests using simple-get
+// Function to handle image compression requests using stream-http
 export function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
-    return res.status(400).send('Image URL is required.');
+    res.statusCode = 400;
+    return res.end('Image URL is required.');
   }
   req.params = {
     url: decodeURIComponent(url),
@@ -89,28 +96,49 @@ export function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  // Fetch the image using simple-get
-  get(req.params.url, (err, response) => {
-    if (err) {
-      console.error('Error fetching image:', err.message);
-      return res.status(500).send('Failed to fetch the image.');
-    }
+  let urlObj;
+  try {
+    urlObj = new URL(req.params.url);
+  } catch (err) {
+    res.statusCode = 400;
+    return res.end('Invalid URL.');
+  }
 
+  // Build the options for the stream-http request.
+  const options = {
+    protocol: urlObj.protocol,
+    hostname: urlObj.hostname,
+    port: urlObj.port,
+    path: urlObj.pathname + urlObj.search,
+    method: 'GET',
+  };
+
+  // Initiate the HTTP request using stream-http
+  const clientRequest = http.request(options, (response) => {
     req.params.originType = response.headers['content-type'];
     req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     if (response.statusCode >= 400) {
-      return res.status(response.statusCode).send('Failed to fetch the image.');
+      res.statusCode = response.statusCode;
+      return res.end('Failed to fetch the image.');
     }
 
     if (shouldCompress(req)) {
-      // Compress the stream
+      // Compress the image stream if needed
       compress(req, res, response);
     } else {
-      // Stream the original image to the response if compression is not needed
+      // Otherwise, pipe the original image stream directly to the response
       res.setHeader('Content-Type', req.params.originType);
-     // res.setHeader('Content-Length', req.params.originSize);
+      res.setHeader('Content-Length', req.params.originSize);
       response.pipe(res);
     }
   });
+
+  clientRequest.on('error', (err) => {
+    console.error('Error fetching image:', err.message);
+    res.statusCode = 500;
+    res.end('Failed to fetch the image.');
+  });
+
+  clientRequest.end();
 }
