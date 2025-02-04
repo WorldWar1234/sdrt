@@ -87,7 +87,7 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await get(req.params.url);
+    const response = await get.concat(req.params.url);
 
     req.params.originType = response.headers['content-type'];
     req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
@@ -98,12 +98,12 @@ export async function fetchImageAndHandle(req, res) {
 
     if (shouldCompress(req)) {
       // Compress the stream
-      compress(req, res, response);
+      compress(req, res, response.body);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      response.pipe(res);
+      res.end(response.body);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
