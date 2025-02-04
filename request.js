@@ -88,13 +88,7 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     // Use stream-http to make the request
-    const requestOptions = new URL(req.params.url);
-    const httpRequest = http.request({
-      hostname: requestOptions.hostname,
-      path: requestOptions.pathname,
-      protocol: requestOptions.protocol,
-      method: 'GET',
-    });
+    const httpRequest = http.request(req.params.url);
 
     // Handle the response
     httpRequest.on('response', (response) => {
