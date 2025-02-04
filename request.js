@@ -1,4 +1,4 @@
-import superagent from 'superagent';
+import axios from 'axios';
 import sharp from 'sharp';
 
 // Constants
@@ -26,9 +26,9 @@ function shouldCompress(req) {
   return true;
 }
 
-// Function to compress an image stream directly
+// Function to compress an image stream directly using Sharp
 function compress(req, res, inputStream) {
-  // Configure Sharp options
+  // Disable caching and set concurrency options for sharp
   sharp.cache(false);
   sharp.concurrency(1);
   sharp.simd(true);
@@ -42,7 +42,7 @@ function compress(req, res, inputStream) {
   // Pipe the input stream into Sharp for processing
   inputStream.pipe(sharpInstance);
 
-  // Process metadata and apply transformations
+  // Read metadata to optionally adjust transformations
   sharpInstance
     .metadata()
     .then((metadata) => {
@@ -54,9 +54,10 @@ function compress(req, res, inputStream) {
         sharpInstance.grayscale();
       }
 
-      // Set the appropriate response header for the output format
+      // Set the response Content-Type header to the target format
       res.setHeader('Content-Type', `image/${format}`);
-      // Convert the image to the desired format and stream it to the response
+
+      // Convert the image to the desired format and stream the output
       sharpInstance
         .toFormat(format, { quality: req.params.quality, effort: 0 })
         .on('info', (info) => {
@@ -64,12 +65,7 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Processed-Size', info.size);
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
-        .on('data', (chunk) => {
-          res.write(Buffer.from(chunk));
-        })
-        .on('end', () => {
-          res.end();
-        })
+        .pipe(res)
         .on('error', (err) => {
           console.error('Error during image processing:', err.message);
           res.statusCode = 500;
@@ -83,14 +79,12 @@ function compress(req, res, inputStream) {
     });
 }
 
-// Function to handle image compression requests using superagent
-export function fetchImageAndHandle(req, res) {
+// Function to handle image compression requests using axios
+export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.status(400).send('Image URL is required.');
   }
-
-  // Set parameters from query string
   req.params = {
     url: decodeURIComponent(url),
     webp: !req.query.jpeg, // if "jpeg" is provided, do not convert to webp
@@ -98,33 +92,30 @@ export function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  // Create a superagent request with buffering disabled so we work with streams
-  const imageRequest = superagent.get(req.params.url).buffer(false);
+  try {
+    // Fetch the image with axios configured to return a stream
+    const response = await axios.get(req.params.url, { responseType: 'stream' });
 
-  // Listen for the response event to access headers and status code
-  imageRequest.on('response', (response) => {
+    // Get the content type and length from response headers
     req.params.originType = response.headers['content-type'];
     req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
-    if (response.statusCode >= 400) {
-      res.status(response.statusCode).send('Failed to fetch the image.');
-      return;
+    // If the response status indicates an error, return it to the client
+    if (response.status >= 400) {
+      return res.status(response.status).send('Failed to fetch the image.');
     }
 
     if (shouldCompress(req)) {
-      // If compression is needed, pass the superagent stream to the compressor
-      compress(req, res, imageRequest);
+      // If compression is needed, pass the response stream to Sharp for processing
+      compress(req, res, response.data);
     } else {
-      // Otherwise, set appropriate headers and pipe the original image stream to the response
+      // Otherwise, set appropriate headers and pipe the original stream directly to the client
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      imageRequest.pipe(res);
+      response.data.pipe(res);
     }
-  });
-
-  // Handle errors from superagent
-  imageRequest.on('error', (err) => {
-    console.error('Error fetching image:', err.message);
+  } catch (error) {
+    console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
-  });
+  }
 }
