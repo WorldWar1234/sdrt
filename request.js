@@ -77,7 +77,7 @@ export async function fetchImageAndHandle(req, res) {
     const params = {
       url: decodeURIComponent(url),
       webp: !req.query.jpeg,
-      grayscale: !!req.query.bw,
+      grayscale: !req.query.bw,
       quality: Math.min(Math.max(parseInt(req.query.l, 10) || DEFAULT_QUALITY, 10), 100),
     };
 
