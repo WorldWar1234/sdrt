@@ -78,7 +78,8 @@ export async function fetchImageAndHandle(req, res) {
       url: decodeURIComponent(url),
       webp: !req.query.jpeg,
       grayscale: !req.query.bw,
-      quality: Math.min(Math.max(parseInt(req.query.l, 10) || DEFAULT_QUALITY, 10), 100),
+      //quality: Math.min(Math.max(parseInt(req.query.l, 10) || DEFAULT_QUALITY, 10), 100),
+      quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
     };
 
     const response = await axiosInstance.get(params.url, { 
