@@ -42,7 +42,7 @@ async function compress(req, res, inputStream) {
       .grayscale(req.params.grayscale)
       .toFormat(format, {
         quality: req.params.quality,
-        effort: 4,
+        effort: 0,
         smartSubsample: true,
       });
 
