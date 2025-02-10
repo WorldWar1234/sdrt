@@ -43,7 +43,7 @@ async function compress(req, res, inputStream) {
       .toFormat(format, {
         quality: req.params.quality,
         effort: 0,
-        smartSubsample: true,
+        smartSubsample: false,
       });
 
     // Set security headers
