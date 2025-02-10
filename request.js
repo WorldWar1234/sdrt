@@ -87,8 +87,8 @@ export async function fetchImageAndHandle(req, res) {
       validateStatus: (status) => status >= 200 && status < 400
     });
 
-    params.originType = response.headers['content-type'];
-    params.originSize = parseInt(response.headers['content-length'], 10) || 0;
+    req.params.originType = response.headers['content-type'];
+    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     if (shouldCompress(params)) {
       await compress({ params }, res, response.data);
