@@ -91,7 +91,7 @@ export async function fetchImageAndHandle(req, res) {
     req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     if (shouldCompress(params)) {
-      await compress({ params }, res, response.data);
+      await compress(req, res, response.data);
     } else {
       res.setHeader('Content-Type', params.originType);
       res.setHeader('Content-Length', params.originSize);
