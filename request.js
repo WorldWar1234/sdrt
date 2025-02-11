@@ -1,6 +1,7 @@
 import axios from 'axios';
 import sharp from 'sharp';
 import { Transform } from 'stream';
+import {compress} from './compress.js';
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
