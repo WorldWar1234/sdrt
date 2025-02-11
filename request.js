@@ -47,6 +47,7 @@ const format = req.params.webp ? 'webp' : 'jpeg';
     console.error('Error during image processing:', err.message);
     res.status(500).end('Failed to process the image.');
   }
+}
 
 // Function to handle image compression requests using axios
 export async function fetchImageAndHandle(req, res) {
