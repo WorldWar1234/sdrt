@@ -34,20 +34,20 @@ const format = req.params.webp ? 'webp' : 'jpeg';
 
     res.setHeader('Content-Type', `image/${format}`);
 
-    const outputBuffer = await sharpInstance
+    const outputStream = sharpInstance
       .toFormat(format, { quality: req.params.quality, effort: 0 })
-      .toBuffer();
+      .on('info', (info) => {
+        res.setHeader('X-Original-Size', req.params.originSize);
+        res.setHeader('X-Processed-Size', info.size);
+        res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
+      });
 
-    res.setHeader('X-Original-Size', req.params.originSize);
-    res.setHeader('X-Processed-Size', outputBuffer.length);
-    res.setHeader('X-Bytes-Saved', req.params.originSize - outputBuffer.length);
-
-    res.send(outputBuffer);
+    outputStream.pipe(res);
   } catch (err) {
     console.error('Error during image processing:', err.message);
     res.status(500).end('Failed to process the image.');
   }
-}
+
 // Function to handle image compression requests using axios
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
