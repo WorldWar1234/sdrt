@@ -33,13 +33,13 @@ async function compress(req, res, input) {
 
         const isAnimated = metadata.pages > 1;
         const pixelCount = metadata.width * metadata.height;
-        const outputFormat = isAnimated ? 'webp' : format;
+        const outputFormat = 'webp';
         const avifParams = outputFormat === 'avif' ? optimizeAvifParams(metadata.width, metadata.height) : {};
         let processedImage = prepareImage(input, grayscale, isAnimated, metadata, pixelCount);
 
         const formatOptions = getFormatOptions(outputFormat, compressionQuality, avifParams, isAnimated);
         
-    processedImage.toFormat(outputFormat, formatOptions)
+    processedImage.toFormat(ouputFormat, { quality: req.params.quality, effort: 0 })
             .toBuffer({ resolveWithObject: true })
             .then(({ data, info }) => {
                 sendImage(res, data, outputFormat, req.params.url || '', req.params.originSize || 0, info.size);
