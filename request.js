@@ -1,5 +1,6 @@
 import axios from 'axios';
 import sharp from 'sharp';
+import { Transform } from 'stream';
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -18,9 +19,9 @@ function shouldCompress({ originType, originSize, webp }) {
 }
 
 // Function to compress an image stream directly using Sharp
-async function compress(req, res, inputStream) {
+async function compress(req, res, inputBuffer) {
   const format = req.params.webp ? 'webp' : 'jpeg';
-  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
+  const sharpInstance = sharp(inputBuffer, { unlimited: false, animated: false, limitInputPixels: false });
 
   try {
     const metadata = await sharpInstance.metadata();
@@ -42,7 +43,7 @@ async function compress(req, res, inputStream) {
         res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
       });
 
-    inputStream.pipe(sharpInstance).pipe(res);
+    outputStream.pipe(res);
   } catch (err) {
     console.error('Error during image processing:', err.message);
     res.status(500).end('Failed to process the image.');
@@ -90,13 +91,24 @@ export async function fetchImageAndHandle(req, res) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
 
-    if (shouldCompress(req)) {
-      await compress(req, res, response.data);
-    } else {
-      res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);
-      response.data.pipe(res);
-    }
+    const chunks = [];
+    response.data.on('data', chunk => chunks.push(chunk));
+    response.data.on('end', async () => {
+      const buffer = Buffer.concat(chunks);
+
+      if (shouldCompress(req)) {
+        await compress(req, res, buffer);
+      } else {
+        res.setHeader('Content-Type', req.params.originType);
+        res.setHeader('Content-Length', req.params.originSize);
+        res.end(buffer);
+      }
+    });
+
+    response.data.on('error', (err) => {
+      console.error('Error receiving image data:', err.message);
+      res.status(500).send('Failed to fetch the image.');
+    });
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
