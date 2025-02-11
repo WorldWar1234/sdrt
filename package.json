@@ -14,7 +14,8 @@
     "express": "4.21.2",
     "sharp": "^0.33.5",
     "axios":"1.7.9",
-    "got":"^14.4.5"
+    "got":"^14.4.5",
+    "http2-wrapper": "^2.2.1"
   },
   "engines": {
     "node": "22.x"
