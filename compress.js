@@ -78,8 +78,8 @@ function optimizeAvifParams(width, height) {
 
 function getFormatOptions(outputFormat, quality, avifParams, isAnimated) {
     const options = {
-        quality,
-        alphaQuality: 80,
+        quality:req.params.quality,
+        alphaQuality: 100,
         //smartSubsample: true,
         chromaSubsampling: '4:2:0',
         loop: isAnimated ? 0 : undefined,
