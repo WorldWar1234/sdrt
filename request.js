@@ -18,37 +18,27 @@ function shouldCompress({ originType, originSize, webp }) {
 }
 
 // Function to compress an image stream directly using Sharp
-async function compress(req, res, inputStream) {
-  sharp.cache(false);
-  sharp.concurrency(1); 
+function compress(req, res, input) {
   const format = req.params.webp ? 'webp' : 'jpeg';
-  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
-  try {
-    const metadata = await sharpInstance.metadata();
-    if (metadata.height > MAX_HEIGHT) {
-      sharpInstance.resize({ height: MAX_HEIGHT });
-    }
+  sharp(input)
+    .grayscale(req.params.grayscale)
+    .toFormat(format, {
+      quality: req.params.quality,
+      progressive: true,
+      optimizeScans: true
+    })
+    .toBuffer((err, output, info) => {
+      if (err || !info || res.headersSent) {
+        return redirect(req, res);
+      }
 
-    if (req.params.grayscale) {
-      sharpInstance.grayscale();
-    }
-
-    res.setHeader('Content-Type', `image/${format}`);
-
-    const outputStream = sharpInstance
-      .toFormat(format, { quality: req.params.quality, effort: 0 })
-      .on('info', (info) => {
-        res.setHeader('X-Original-Size', req.params.originSize);
-        res.setHeader('X-Processed-Size', info.size);
-        res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
-      });
-
-    inputStream.pipe(sharpInstance).pipe(res);
-  } catch (err) {
-    console.error('Error during image processing:', err.message);
-    res.status(500).end('Failed to process the image.');
-  }
+      res.setHeader('content-type', `image/${format}`);
+      res.setHeader('content-length', info.size);
+      res.setHeader('x-original-size', req.params.originSize);
+      res.setHeader('x-bytes-saved', req.params.originSize - info.size);
+      res.status(200).send(output);
+    });
 }
 
 // Function to handle image compression requests using axios
@@ -65,7 +55,7 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     const response = await axios.get(req.params.url, {
-      responseType: 'stream',
+      responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
         'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
