@@ -33,13 +33,13 @@ async function compress(req, res, input) {
 
         const isAnimated = metadata.pages > 1;
         const pixelCount = metadata.width * metadata.height;
-        const outputFormat = 'webp';
+        const outputFormat = isAnimated ? 'webp' : format;
         const avifParams = outputFormat === 'avif' ? optimizeAvifParams(metadata.width, metadata.height) : {};
         let processedImage = prepareImage(input, grayscale, isAnimated, metadata, pixelCount);
 
         const formatOptions = getFormatOptions(outputFormat, compressionQuality, avifParams, isAnimated);
         
-    processedImage.toFormat(ouputFormat, { quality: req.params.quality, effort: 0 })
+    processedImage.toFormat(outputFormat, formatOptions)
             .toBuffer({ resolveWithObject: true })
             .then(({ data, info }) => {
                 sendImage(res, data, outputFormat, req.params.url || '', req.params.originSize || 0, info.size);
@@ -54,8 +54,8 @@ async function compress(req, res, input) {
 }
 
 function getCompressionParams(req) {
-    const format = req.params?.webp ? 'avif' : 'jpeg';
-    const compressionQuality = Math.min(Math.max(parseInt(req.params?.quality, 10) || 75, 10), 100);
+    const format = 'webp';
+    const compressionQuality = req.params.quality;
     const grayscale = req.params?.grayscale === 'true' || req.params?.grayscale === true;
 
     return { format, compressionQuality, grayscale };
@@ -78,8 +78,8 @@ function optimizeAvifParams(width, height) {
 
 function getFormatOptions(outputFormat, quality, avifParams, isAnimated) {
     const options = {
-        quality:req.params.quality,
-        alphaQuality: 100,
+        quality,
+        alphaQuality: 80,
         //smartSubsample: true,
         chromaSubsampling: '4:2:0',
         loop: isAnimated ? 0 : undefined,
