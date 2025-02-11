@@ -18,27 +18,35 @@ function shouldCompress({ originType, originSize, webp }) {
 }
 
 // Function to compress an image stream directly using Sharp
-function compress(req, res, input) {
+async function compress(req, res, inputBuffer) {
   const format = req.params.webp ? 'webp' : 'jpeg';
+  const sharpInstance = sharp(inputBuffer, { unlimited: false, animated: false, limitInputPixels: false });
 
-  sharp(input)
-    .grayscale(req.params.grayscale)
-    .toFormat(format, {
-      quality: req.params.quality,
-      progressive: true,
-      optimizeScans: true
-    })
-    .toBuffer((err, output, info) => {
-      if (err || !info || res.headersSent) {
-        return redirect(req, res);
-      }
+  try {
+    const metadata = await sharpInstance.metadata();
+    if (metadata.height > MAX_HEIGHT) {
+      sharpInstance.resize({ height: MAX_HEIGHT });
+    }
 
-      res.setHeader('content-type', `image/${format}`);
-      res.setHeader('content-length', info.size);
-      res.setHeader('x-original-size', req.params.originSize);
-      res.setHeader('x-bytes-saved', req.params.originSize - info.size);
-      res.status(200).send(output);
-    });
+    if (req.params.grayscale) {
+      sharpInstance.grayscale();
+    }
+
+    res.setHeader('Content-Type', `image/${format}`);
+
+    const outputStream = sharpInstance
+      .toFormat(format, { quality: req.params.quality, effort: 0 })
+      .on('info', (info) => {
+        res.setHeader('X-Original-Size', req.params.originSize);
+        res.setHeader('X-Processed-Size', info.size);
+        res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
+      });
+
+    outputStream.pipe(res);
+  } catch (err) {
+    console.error('Error during image processing:', err.message);
+    res.status(500).end('Failed to process the image.');
+  }
 }
 
 // Function to handle image compression requests using axios
@@ -55,7 +63,7 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     const response = await axios.get(req.params.url, {
-      responseType: 'arraybuffer',
+      responseType: 'arraybuffer', // Get the response as an array buffer
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
         'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
@@ -82,12 +90,14 @@ export async function fetchImageAndHandle(req, res) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
 
+    const buffer = Buffer.from(response.data, 'binary'); // Convert response data to buffer
+
     if (shouldCompress(req)) {
-      await compress(req, res, response.data);
+      await compress(req, res, buffer);
     } else {
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      response.data.pipe(res);
+      res.end(buffer);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
