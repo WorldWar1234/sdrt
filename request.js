@@ -1,6 +1,5 @@
 import axios from 'axios';
 import sharp from 'sharp';
-import { Transform } from 'stream';
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -64,7 +63,7 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     const response = await axios.get(req.params.url, {
-      responseType: 'arraybuffer',
+      responseType: 'arraybuffer', // Get the response as an array buffer
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
         'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
@@ -91,19 +90,15 @@ export async function fetchImageAndHandle(req, res) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
 
-      if (shouldCompress(req)) {
-        await compress(req, res, response.data);
-      } else {
-        res.setHeader('Content-Type', req.params.originType);
-        res.setHeader('Content-Length', req.params.originSize);
-        res.end(response.data);
-      }
-    });
+    const buffer = Buffer.from(response.data, 'binary'); // Convert response data to buffer
 
-    response.data.on('error', (err) => {
-      console.error('Error receiving image data:', err.message);
-      res.status(500).send('Failed to fetch the image.');
-    });
+    if (shouldCompress(req)) {
+      await compress(req, res, buffer);
+    } else {
+      res.setHeader('Content-Type', req.params.originType);
+      res.setHeader('Content-Length', req.params.originSize);
+      res.end(buffer);
+    }
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
