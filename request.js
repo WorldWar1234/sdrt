@@ -6,10 +6,6 @@ const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383; // Resize if height exceeds this value
-const REQUEST_TIMEOUT = 10000; // 10 seconds timeout for axios requests
-
-// Generic User-Agent to mimic a browser request
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
 
 // Utility function to determine if compression is needed
 function shouldCompress({ originType, originSize, webp }) {
@@ -37,8 +33,6 @@ async function compress(req, res, inputStream) {
     }
 
     res.setHeader('Content-Type', `image/${format}`);
-    res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache the response for 1 year
-    res.setHeader('X-Content-Type-Options', 'nosniff'); // Prevent MIME type sniffing
 
     const outputStream = sharpInstance
       .toFormat(format, { quality: req.params.quality, effort: 0 })
@@ -68,15 +62,25 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Fetch the image with axios using a generic user-agent and timeout
     const response = await axios.get(req.params.url, {
       responseType: 'stream',
-      timeout: REQUEST_TIMEOUT,
       headers: {
-        'User-Agent': USER_AGENT, // Use a generic user-agent
-        'Accept': 'image/*', // Accept only image types
-        'Referer': new URL(req.params.url).origin, // Add referer header to mimic browser behavior
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        // Explicitly set only the headers you need
       },
+      transformRequest: [(data, headers) => {
+        // Pick only the headers you want to include
+        const allowedHeaders = ['User-Agent', 'Accept', 'Accept-Language', 'Connection'];
+        Object.keys(headers).forEach(key => {
+          if (!allowedHeaders.includes(key)) {
+            delete headers[key];
+          }
+        });
+        return data;
+      }]
     });
 
     req.params.originType = response.headers['content-type'];
@@ -91,16 +95,10 @@ export async function fetchImageAndHandle(req, res) {
     } else {
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache the response for 1 year
-      res.setHeader('X-Content-Type-Options', 'nosniff'); // Prevent MIME type sniffing
       response.data.pipe(res);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
-    if (error.code === 'ECONNABORTED') {
-      res.status(504).send('Request timed out.'); // Handle timeout errors
-    } else {
-      res.status(500).send('Failed to fetch the image.');
-    }
+    res.status(500).send('Failed to fetch the image.');
   }
 }
