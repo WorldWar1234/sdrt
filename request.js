@@ -64,7 +64,7 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     const response = await axios.get(req.params.url, {
-      responseType: 'stream',
+      responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
         'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
@@ -91,17 +91,12 @@ export async function fetchImageAndHandle(req, res) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
 
-    const chunks = [];
-    response.data.on('data', chunk => chunks.push(chunk));
-    response.data.on('end', async () => {
-      const buffer = Buffer.concat(chunks);
-
       if (shouldCompress(req)) {
-        await compress(req, res, buffer);
+        await compress(req, res, response.data);
       } else {
         res.setHeader('Content-Type', req.params.originType);
         res.setHeader('Content-Length', req.params.originSize);
-        res.end(buffer);
+        res.end(response.data);
       }
     });
 
