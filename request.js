@@ -18,9 +18,9 @@ function shouldCompress({ originType, originSize, webp }) {
 }
 
 // Function to compress an image stream directly using Sharp
-async function compress(req, res, buffer) {
-const format = req.params.webp ? 'webp' : 'jpeg';
-  const sharpInstance = sharp(buffer, { unlimited: false, animated: false, limitInputPixels: false });
+async function compress(req, res, inputStream) {
+  const format = req.params.webp ? 'webp' : 'jpeg';
+  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
   try {
     const metadata = await sharpInstance.metadata();
@@ -42,7 +42,7 @@ const format = req.params.webp ? 'webp' : 'jpeg';
         res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
       });
 
-    outputStream.pipe(res);
+    inputStream.pipe(sharpInstance).pipe(res);
   } catch (err) {
     console.error('Error during image processing:', err.message);
     res.status(500).end('Failed to process the image.');
@@ -85,15 +85,13 @@ export async function fetchImageAndHandle(req, res) {
 
     req.params.originType = response.headers['content-type'];
     req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
-    
 
     if (response.status >= 400) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
-    const buffer = Buffer.from(response.data);
 
     if (shouldCompress(req)) {
-      await compress(req, res, buffer);
+      await compress(req, res, response.data);
     } else {
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
