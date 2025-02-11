@@ -1,6 +1,6 @@
 import got from 'got';
 import sharp from 'sharp';
-
+import http2wrapper from 'http2-wrapper';
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
@@ -63,7 +63,13 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     const response = await got(req.params.url, {
-      responseType: 'buffer', // Get the response as a buffer
+      timeout: { request: 10000 },
+        maxRedirects: 5,
+        responseType: 'buffer',
+        method: 'GET',
+        decompress: false, // handle decompression manually
+        http2: true,  // Enable HTTP/2
+        request: http2wrapper.auto,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
         'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
