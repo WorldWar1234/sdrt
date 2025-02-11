@@ -20,7 +20,7 @@ function shouldCompress({ originType, originSize, webp }) {
 }
 
 // Function to compress an image stream directly using Sharp
-async function compress(req, res, inputBuffer) {
+/*async function compress(req, res, inputBuffer) {
   const format = req.params.webp ? 'webp' : 'jpeg';
   const sharpInstance = sharp(inputBuffer, { unlimited: false, animated: false, limitInputPixels: false });
 
@@ -49,7 +49,7 @@ async function compress(req, res, inputBuffer) {
     console.error('Error during image processing:', err.message);
     res.status(500).end('Failed to process the image.');
   }
-}
+}*/
 
 // Function to handle image compression requests using axios
 export async function fetchImageAndHandle(req, res) {
