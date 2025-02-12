@@ -1,15 +1,12 @@
-import axios from "axios";
-import http2Wrapper from "http2-wrapper";
-import sharp from "sharp";
+import axios from 'axios';
+import { createHTTP2Adapter } from 'axios-http2-adapter';
+import sharp from 'sharp';
 
 // Constants
 const DEFAULT_QUALITY = 80;
 
-// Configure axios to use HTTP/2
-const http2Axios = axios.create({
-  httpAgent: http2Wrapper.wrap(new http2Wrapper.Http2Agent()),
-  httpsAgent: http2Wrapper.wrap(new http2Wrapper.Http2Agent()),
-});
+// Configure axios to use the HTTP/2 adapter globally
+axios.defaults.adapter = createHTTP2Adapter();
 
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
@@ -25,7 +22,7 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await http2Axios({
+    const response = await axios({
       method: "get",
       url: req.params.url,
       responseType: "stream",
