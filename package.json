@@ -13,7 +13,7 @@
   "dependencies": {
     "express": "4.21.2",
     "sharp": "^0.33.5",
-    "fetch":"3.3.2",
+    "node-fetch":"3.3.2",
     "http2-wrapper": "^2.2.1",
     "axios-http2-adapter":"1.0.2"
   },
