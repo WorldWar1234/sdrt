@@ -62,7 +62,6 @@ function compress(req, res, inputStream) {
       if (metadata.height > 16383) {
         sharpInstance.resize({ height: 16383 });
       }
-      sharpInstance.sharpen(0.5);
 
       if (req.params.grayscale) {
         sharpInstance.grayscale();
