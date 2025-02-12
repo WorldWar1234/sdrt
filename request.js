@@ -61,25 +61,58 @@ export async function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  fetch(req.params.url)
-    .then(origin => {
-        if (!origin.ok) {
-            throw err;
-        }
+  try {
+    // Fetch the URL provided in req.params.url.
+    const response = await fetch(req.params.url, { follow: 4 });
 
-        req.params.originType = origin.headers.get('content-type') || '';
-        res.setHeader('content-encoding', 'identity');
+    // If the response indicates an error or a redirect,
+    // set the status and pipe the response body to the client.
+    if (response.status >= 400 || (response.status >= 300 && response.headers.get("location"))) {
+      res.status(response.status);
+      return response.body.pipe(res);
+    }
 
-        if (shouldCompress(req)) {
-            compress(req, res, origin.body);
-        } else {
-     res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);
-      origin.body.pipe(res);
-        }
-    })
-    .catch(err => {
-        console.error('Proxy error:', err);
-        res.status(500).send('Internal Server Error');
+    // Convert the response headers into a plain object.
+    const originHeaders = {};
+    response.headers.forEach((value, key) => {
+      originHeaders[key] = value;
     });
+
+    // Set necessary headers on the client response.
+    res.setHeader("content-encoding", "identity");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+
+    // Store some origin header info for later use.
+    req.params.originType = originHeaders["content-type"] || "";
+    req.params.originSize = originHeaders["content-length"] || "0";
+
+    // Destroy the socket if an error occurs in the stream.
+    response.body.on("error", () => req.socket.destroy());
+
+    if (shouldCompress(req)) {
+      // If compression is required, pass the stream to the compressor.
+      return compress(req, res, {
+        statusCode: response.status,
+        headers: originHeaders,
+        body: response.body,
+      });
+    } else {
+      // Indicate that compression was bypassed and set selected headers manually.
+      res.setHeader("x-proxy-bypass", 1);
+      ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
+        if (originHeaders[header]) {
+          res.setHeader(header, originHeaders[header]);
+        }
+      });
+      return response.body.pipe(res);
+    }
+  } catch (err) {
+    if (err.code === "ERR_INVALID_URL") {
+      return res.status(400).send("Invalid URL");
+    }
+    console.error(err);
+    return res.status(500).send("Internal Server Error");
+  }
 }
