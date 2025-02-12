@@ -55,7 +55,7 @@ export async function fetchImageAndHandle(req, res) {
       return res.end("Failed to fetch the image.");
     }
 
-    req.params.originType = response.headers["content-type"];
+    req.params.originType = response.headers["content-type"]|| "";
     req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
 
     // Log the Content-Type header for debugging
