@@ -19,6 +19,7 @@ function shouldCompress({ originType, originSize, webp }) {
 
 // Function to compress an image stream directly using Sharp
 async function compress(req, res, inputStream) {
+  sharp.cache(false);
   const format = req.params.webp ? 'webp' : 'jpeg';
   const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
