@@ -18,9 +18,9 @@ function shouldCompress({ originType, originSize, webp }) {
 }
 
 // Function to compress an image stream directly using Sharp
-async function compress(req, res, inputBuffer) {
+async function compress(req, res, inputStream) {
   const format = req.params.webp ? 'webp' : 'jpeg';
-  const sharpInstance = sharp(inputBuffer, { unlimited: false, animated: false, limitInputPixels: false });
+  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
   try {
     const metadata = await sharpInstance.metadata();
@@ -42,7 +42,7 @@ async function compress(req, res, inputBuffer) {
         res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
       });
 
-    outputStream.pipe(res);
+    inputStream.pipe(sharpInstance).pipe(res);
   } catch (err) {
     console.error('Error during image processing:', err.message);
     res.status(500).end('Failed to process the image.');
@@ -63,7 +63,7 @@ export async function fetchImageAndHandle(req, res) {
 
   try {
     const response = await axios.get(req.params.url, {
-      responseType: 'arraybuffer', // Get the response as an array buffer
+      responseType: 'stream',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
         'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
@@ -90,14 +90,12 @@ export async function fetchImageAndHandle(req, res) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
 
-   // const buffer = Buffer.from(response.data, 'binary'); // Convert response data to buffer
-
     if (shouldCompress(req)) {
       await compress(req, res, response.data);
     } else {
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      res.end(response.data);
+      response.data.pipe(res);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
