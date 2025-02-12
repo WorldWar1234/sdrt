@@ -1,10 +1,17 @@
-import http2 from "http2";
+import axios from "axios";
+import http2Wrapper from "http2-wrapper";
 import sharp from "sharp";
 
 // Constants
 const DEFAULT_QUALITY = 80;
 
-export function fetchImageAndHandle(req, res) {
+// Configure axios to use HTTP/2
+const http2Axios = axios.create({
+  httpAgent: http2Wrapper.wrap(new http2Wrapper.Http2Agent()),
+  httpsAgent: http2Wrapper.wrap(new http2Wrapper.Http2Agent()),
+});
+
+export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.send("bandwidth-hero-proxy");
@@ -17,24 +24,20 @@ export function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  // Determine the protocol and use the correct client
-  const client = http2.connect(req.params.url.startsWith("https") ? "https://" + new URL(req.params.url).host : "http://" + new URL(req.params.url).host);
+  try {
+    const response = await http2Axios({
+      method: "get",
+      url: req.params.url,
+      responseType: "stream",
+    });
 
-  const request = client.request({
-    [http2.constants.HTTP2_HEADER_METHOD]: http2.constants.HTTP2_METHOD_GET,
-    [http2.constants.HTTP2_HEADER_PATH]: new URL(req.params.url).pathname + new URL(req.params.url).search,
-    [http2.constants.HTTP2_HEADER_SCHEME]: req.params.url.startsWith("https") ? "https" : "http",
-    [http2.constants.HTTP2_HEADER_AUTHORITY]: new URL(req.params.url).host
-  });
-
-  request.on("response", (headers, flags) => {
-    if (headers[http2.constants.HTTP2_HEADER_STATUS] >= 400) {
-      res.statusCode = headers[http2.constants.HTTP2_HEADER_STATUS];
+    if (response.status >= 400) {
+      res.statusCode = response.status;
       return res.end("Failed to fetch the image.");
     }
 
-    req.params.originType = headers[http2.constants.HTTP2_HEADER_CONTENT_TYPE];
-    req.params.originSize = parseInt(headers[http2.constants.HTTP2_HEADER_CONTENT_LENGTH], 10) || 0;
+    req.params.originType = response.headers["content-type"];
+    req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
 
     if (!req.params.originType.startsWith("image")) {
       res.statusCode = 400;
@@ -42,16 +45,12 @@ export function fetchImageAndHandle(req, res) {
     }
 
     // Pass the response stream to the compress function
-    compress(req, res, request);
-  });
-
-  request.on("error", (err) => {
+    compress(req, res, response.data);
+  } catch (err) {
     console.error("Error fetching image:", err.message);
     res.statusCode = 500;
     res.end("Failed to fetch the image.");
-  });
-
-  request.end();
+  }
 }
 
 // Compress function with piping
