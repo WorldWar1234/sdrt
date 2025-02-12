@@ -1,14 +1,24 @@
-import axios from "axios";
-import https2Adapter from "axios-https2-adapter";
-import sharp from "sharp";
-
-// Create an Axios instance configured to use the HTTP/2 adapter.
-const http2Axios = axios.create({
-  adapter: https2Adapter,
-});
+import axios from 'axios';
+import { createHTTP2Adapter } from 'axios-http2-adapter';
+import http2 from 'http2';
+import sharp from 'sharp';
 
 // Constants
 const DEFAULT_QUALITY = 80;
+
+// Configure axios to use the HTTP/2 adapter with custom options
+const adapterConfig = {
+  agent: new http2.Agent({
+    keepAlive: true, // Keep connections open for reuse
+    maxSessions: 10, // Maximum number of concurrent sessions
+    maxFreeSessions: 2, // Maximum number of free sessions before closing
+    timeout: 60000, // Timeout for inactive sessions (in milliseconds)
+  }),
+  force: true, // Force HTTP/2 without ALPN check
+};
+
+
+axios.defaults.adapter = createHTTP2Adapter(adapterConfig);
 
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
@@ -24,8 +34,7 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Use the http2Axios instance so that the request uses HTTP/2.
-    const response = await http2Axios({
+    const response = await axios({
       method: "get",
       url: req.params.url,
       responseType: "stream",
@@ -39,12 +48,7 @@ export async function fetchImageAndHandle(req, res) {
     req.params.originType = response.headers["content-type"];
     req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
 
-   /* if (!req.params.originType.startsWith("image")) {
-      res.statusCode = 400;
-      return res.end("The requested URL is not an image.");
-    }*/
-
-    // Pass the response stream to the compress function.
+    // Pass the response stream to the compress function
     compress(req, res, response.data);
   } catch (err) {
     console.error("Error fetching image:", err.message);
@@ -59,24 +63,28 @@ function compress(req, res, inputStream) {
   const sharpInstance = sharp({ unlimited: true, animated: false });
 
   inputStream
-    .pipe(sharpInstance)
+    .pipe(sharpInstance) // Pipe input stream to Sharp for processing
     .on("error", (err) => {
       console.error("Error during image processing:", err.message);
       res.statusCode = 500;
       res.end("Failed to process image.");
     });
 
+  // Handle metadata and apply transformations
   sharpInstance
     .metadata()
     .then((metadata) => {
       if (metadata.height > 16383) {
         sharpInstance.resize({ height: 16383 });
       }
+
       if (req.params.grayscale) {
         sharpInstance.grayscale();
       }
+
+      // Pipe the processed image directly to the response
       res.setHeader("Content-Type", `image/${format}`);
-      sharpInstance.toFormat(format, { quality: req.params.quality, effort: 0 }).pipe(res);
+      sharpInstance.toFormat(format, { quality: req.params.quality, effort:0 }).pipe(res);
     })
     .catch((err) => {
       console.error("Error fetching metadata:", err.message);
