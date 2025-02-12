@@ -1,34 +1,28 @@
-import axios from 'axios';
-import { createHTTP2Adapter } from 'axios-http2-adapter';
+import fetch from 'node-fetch';
 import http2 from 'http2-wrapper';
 import sharp from 'sharp';
 
 // Constants
 const DEFAULT_QUALITY = 80;
 
-// Configure axios to use the HTTP/2 adapter with specific options
-const adapterConfig = {
-  agent: new http2.Agent({
-    maxSessions: 10,
-    maxDeflateDynamicTableSize: 8192,
-    maxHeaderListPairs: 256,
-    maxOutstandingPings: 5,
-    maxReservedRemoteStreams: 10,
-    maxSendHeaderBlockLength: 16384,
-    paddingStrategy: 1,
-    peerMaxConcurrentStreams: 100,
-    selectPadding: 8,
-    settings: {
-      headerTableSize: 65536,
-      enablePush: false,
-      maxConcurrentStreams: 100,
-    },
-    timeout: 30000, // 30 seconds
-  }),
-  force: true // Force HTTP/2 without ALPN check - adapter will not check whether the endpoint supports http2 before the request
-};
-
-axios.defaults.adapter = createHTTP2Adapter(adapterConfig);
+// Configure fetch to use the HTTP/2 adapter with specific options
+const agent = new http2.Agent({
+  maxSessions: 10,
+  maxDeflateDynamicTableSize: 8192,
+  maxHeaderListPairs: 256,
+  maxOutstandingPings: 5,
+  maxReservedRemoteStreams: 10,
+  maxSendHeaderBlockLength: 16384,
+  paddingStrategy: 1,
+  peerMaxConcurrentStreams: 100,
+  selectPadding: 8,
+  settings: {
+    headerTableSize: 65536,
+    enablePush: false,
+    maxConcurrentStreams: 100,
+  },
+  timeout: 30000, // 30 seconds
+});
 
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
@@ -44,19 +38,21 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await axios({
-      method: "get",
-      url: req.params.url,
-      responseType: "stream",
+    const response = await fetch(req.params.url, {
+      method: "GET",
+      agent,
     });
 
-    if (response.status >= 400) {
+    if (!response.ok) {
       res.statusCode = response.status;
       return res.end("Failed to fetch the image.");
     }
 
-    req.params.originType = response.headers["content-type"]|| "";
-    req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
+    const contentType = response.headers.get("content-type");
+    const contentLength = response.headers.get("content-length");
+
+    req.params.originType = contentType;
+    req.params.originSize = parseInt(contentLength, 10) || 0;
 
     // Log the Content-Type header for debugging
     console.log("Content-Type:", req.params.originType);
@@ -67,7 +63,7 @@ export async function fetchImageAndHandle(req, res) {
     }
 
     // Pass the response stream to the compress function
-    compress(req, res, response.data);
+    compress(req, res, response.body);
   } catch (err) {
     console.error("Error fetching image:", err.message);
     res.statusCode = 500;
