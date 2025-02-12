@@ -39,10 +39,10 @@ export async function fetchImageAndHandle(req, res) {
     req.params.originType = response.headers["content-type"];
     req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
 
-    if (!req.params.originType.startsWith("image")) {
+   /* if (!req.params.originType.startsWith("image")) {
       res.statusCode = 400;
       return res.end("The requested URL is not an image.");
-    }
+    }*/
 
     // Pass the response stream to the compress function.
     compress(req, res, response.data);
