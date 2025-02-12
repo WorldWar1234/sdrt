@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import axios from 'axios';
 import sharp from 'sharp';
 
 // Constants
@@ -62,21 +62,19 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Fetch the URL provided in req.params.url.
-    const response = await fetch(req.params.url, { follow: 4 });
-
-    // If the response indicates an error or a redirect,
-    // set the status and pipe the response body to the client.
-    if (response.status >= 400 || (response.status >= 300 && response.headers.get("location"))) {
-      res.status(response.status);
-      return response.body.pipe(res);
-    }
-
-    // Convert the response headers into a plain object.
-    const originHeaders = {};
-    response.headers.forEach((value, key) => {
-      originHeaders[key] = value;
+    // Fetch the URL with axios using a stream response.
+    const response = await axios.get(req.params.url, {
+      responseType: "stream",
+      maxRedirects: 4,
+      // Ensure axios resolves the promise regardless of the HTTP status.
+      validateStatus: () => true
     });
+
+    // If the response indicates an error or a redirect, simply forward it.
+    if (response.status >= 400 || (response.status >= 300 && response.headers.location)) {
+      res.status(response.status);
+      return response.data.pipe(res);
+    }
 
     // Set necessary headers on the client response.
     res.setHeader("content-encoding", "identity");
@@ -84,29 +82,29 @@ export async function fetchImageAndHandle(req, res) {
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
 
-    // Store some origin header info for later use.
-    req.params.originType = originHeaders["content-type"] || "";
-    req.params.originSize = originHeaders["content-length"] || "0";
+    // Save origin header info for later use.
+    req.params.originType = response.headers["content-type"] || "";
+    req.params.originSize = response.headers["content-length"] || "0";
 
-    // Destroy the socket if an error occurs in the stream.
-    response.body.on("error", () => req.socket.destroy());
+    // Destroy the socket if an error occurs while streaming.
+    response.data.on("error", () => req.socket.destroy());
 
     if (shouldCompress(req)) {
-      // If compression is required, pass the stream to the compressor.
+      // If compression is needed, pass the stream to the compressor.
       return compress(req, res, {
         statusCode: response.status,
-        headers: originHeaders,
-        body: response.body,
+        headers: response.headers,
+        body: response.data
       });
     } else {
-      // Indicate that compression was bypassed and set selected headers manually.
+      // Indicate bypass and set selected headers manually.
       res.setHeader("x-proxy-bypass", 1);
       ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-        if (originHeaders[header]) {
-          res.setHeader(header, originHeaders[header]);
+        if (response.headers[header]) {
+          res.setHeader(header, response.headers[header]);
         }
       });
-      return response.body.pipe(res);
+      return response.data.pipe(res);
     }
   } catch (err) {
     if (err.code === "ERR_INVALID_URL") {
