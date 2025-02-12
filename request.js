@@ -90,14 +90,14 @@ export async function fetchImageAndHandle(req, res) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
 
-    const buffer = Buffer.from(response.data, 'binary'); // Convert response data to buffer
+   // const buffer = Buffer.from(response.data, 'binary'); // Convert response data to buffer
 
     if (shouldCompress(req)) {
-      await compress(req, res, buffer);
+      await compress(req, res, response.data);
     } else {
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      res.end(buffer);
+      res.end(response.data);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
