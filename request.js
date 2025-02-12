@@ -62,7 +62,7 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const { data, headers } = await axios.get(imageUrl, { responseType: 'stream' });
+    const { data, headers } = await axios.get(req.params.url, { responseType: 'stream' });
 
     const originType = headers['content-type'];
     const originSize = parseInt(headers['content-length'], 10) || 0;
