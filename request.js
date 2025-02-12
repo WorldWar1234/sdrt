@@ -49,7 +49,7 @@ async function compress(req, res, inputStream) {
   }
 }
 
-// Function to handle image compression requests using node-fetch
+// Function to handle image compression requests using axios
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) return res.status(400).send('Image URL is required.');
@@ -62,55 +62,43 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Fetch the URL with axios using a stream response.
     const response = await axios.get(req.params.url, {
-      responseType: "stream",
-      maxRedirects: 4,
-      // Ensure axios resolves the promise regardless of the HTTP status.
-      validateStatus: () => true
+      responseType: 'stream',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        // Explicitly set only the headers you need
+      },
+      transformRequest: [(data, headers) => {
+        // Pick only the headers you want to include
+        const allowedHeaders = ['User-Agent', 'Accept', 'Accept-Language', 'Connection'];
+        Object.keys(headers).forEach(key => {
+          if (!allowedHeaders.includes(key)) {
+            delete headers[key];
+          }
+        });
+        return data;
+      }]
     });
 
-    // If the response indicates an error or a redirect, simply forward it.
-    if (response.status >= 400 || (response.status >= 300 && response.headers.location)) {
-      res.status(response.status);
-      return response.data.pipe(res);
+    req.params.originType = response.headers['content-type'];
+    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
+
+    if (response.status >= 400) {
+      return res.status(response.status).send('Failed to fetch the image.');
     }
-
-    // Set necessary headers on the client response.
-    res.setHeader("content-encoding", "identity");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
-
-    // Save origin header info for later use.
-    req.params.originType = response.headers["content-type"] || "";
-    req.params.originSize = response.headers["content-length"] || "0";
-
-    // Destroy the socket if an error occurs while streaming.
-    response.data.on("error", () => req.socket.destroy());
 
     if (shouldCompress(req)) {
-      // If compression is needed, pass the stream to the compressor.
-      return compress(req, res, {
-        statusCode: response.status,
-        headers: response.headers,
-        body: response.data
-      });
+      await compress(req, res, response.data);
     } else {
-      // Indicate bypass and set selected headers manually.
-      res.setHeader("x-proxy-bypass", 1);
-      ["accept-ranges", "content-type", "content-length", "content-range"].forEach(header => {
-        if (response.headers[header]) {
-          res.setHeader(header, response.headers[header]);
-        }
-      });
-      return response.data.pipe(res);
+      res.setHeader('Content-Type', req.params.originType);
+      res.setHeader('Content-Length', req.params.originSize);
+      response.data.pipe(res);
     }
-  } catch (err) {
-    if (err.code === "ERR_INVALID_URL") {
-      return res.status(400).send("Invalid URL");
-    }
-    console.error(err);
-    return res.status(500).send("Internal Server Error");
+  } catch (error) {
+    console.error('Error fetching image:', error.message);
+    res.status(500).send('Failed to fetch the image.');
   }
 }
