@@ -8,7 +8,23 @@ const DEFAULT_QUALITY = 80;
 
 // Configure axios to use the HTTP/2 adapter with specific options
 const adapterConfig = {
-  agent: new http2.Agent({ /* options */ }),
+  agent: new http2.Agent({
+    maxSessions: 10,
+    maxDeflateDynamicTableSize: 8192,
+    maxHeaderListPairs: 256,
+    maxOutstandingPings: 5,
+    maxReservedRemoteStreams: 10,
+    maxSendHeaderBlockLength: 16384,
+    paddingStrategy: 1,
+    peerMaxConcurrentStreams: 100,
+    selectPadding: 8,
+    settings: {
+      headerTableSize: 65536,
+      enablePush: false,
+      maxConcurrentStreams: 100,
+    },
+    timeout: 30000, // 30 seconds
+  }),
   force: true // Force HTTP/2 without ALPN check - adapter will not check whether the endpoint supports http2 before the request
 };
 
