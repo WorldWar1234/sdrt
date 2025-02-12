@@ -1,4 +1,4 @@
-import axios from 'axios';
+import fetch from 'node-fetch';
 import sharp from 'sharp';
 
 // Constants
