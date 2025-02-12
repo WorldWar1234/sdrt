@@ -1,4 +1,4 @@
-import got from 'got';
+import axios from 'axios';
 import sharp from 'sharp';
 
 // Constants
@@ -49,7 +49,7 @@ async function compress(req, res, inputBuffer) {
   }
 }
 
-// Function to handle image compression requests using got
+// Function to handle image compression requests using axios
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) return res.status(400).send('Image URL is required.');
@@ -62,8 +62,8 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await got(req.params.url, {
-      responseType: 'buffer', // Get the response as a buffer
+    const response = await axios.get(req.params.url, {
+      responseType: 'arraybuffer', // Get the response as an array buffer
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
         'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
@@ -71,29 +71,26 @@ export async function fetchImageAndHandle(req, res) {
         'Connection': 'keep-alive',
         // Explicitly set only the headers you need
       },
-      hooks: {
-        beforeRequest: [
-          (options) => {
-            // Pick only the headers you want to include
-            const allowedHeaders = ['User-Agent', 'Accept', 'Accept-Language', 'Connection'];
-            Object.keys(options.headers).forEach(key => {
-              if (!allowedHeaders.includes(key)) {
-                delete options.headers[key];
-              }
-            });
+      transformRequest: [(data, headers) => {
+        // Pick only the headers you want to include
+        const allowedHeaders = ['User-Agent', 'Accept', 'Accept-Language', 'Connection'];
+        Object.keys(headers).forEach(key => {
+          if (!allowedHeaders.includes(key)) {
+            delete headers[key];
           }
-        ]
-      }
+        });
+        return data;
+      }]
     });
 
     req.params.originType = response.headers['content-type'];
     req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
-    if (response.statusCode >= 400) {
-      return res.status(response.statusCode).send('Failed to fetch the image.');
+    if (response.status >= 400) {
+      return res.status(response.status).send('Failed to fetch the image.');
     }
 
-    const buffer = response.body; // The response body is already a buffer
+    const buffer = Buffer.from(response.data, 'binary'); // Convert response data to buffer
 
     if (shouldCompress(req)) {
       await compress(req, res, buffer);
