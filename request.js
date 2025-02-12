@@ -1,24 +1,12 @@
 import axios from 'axios';
 import { createHTTP2Adapter } from 'axios-http2-adapter';
-import http2 from 'http2';
 import sharp from 'sharp';
 
 // Constants
 const DEFAULT_QUALITY = 80;
 
-// Configure axios to use the HTTP/2 adapter with custom options
-const adapterConfig = {
-  agent: new http2.Agent({
-    keepAlive: true, // Keep connections open for reuse
-    maxSessions: 10, // Maximum number of concurrent sessions
-    maxFreeSessions: 2, // Maximum number of free sessions before closing
-    timeout: 60000, // Timeout for inactive sessions (in milliseconds)
-  }),
-  force: true, // Force HTTP/2 without ALPN check
-};
-
-
-axios.defaults.adapter = createHTTP2Adapter(adapterConfig);
+// Configure axios to use the HTTP/2 adapter globally
+axios.defaults.adapter = createHTTP2Adapter();
 
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
@@ -47,6 +35,11 @@ export async function fetchImageAndHandle(req, res) {
 
     req.params.originType = response.headers["content-type"];
     req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
+
+    if (!req.params.originType.startsWith("image")) {
+      res.statusCode = 400;
+      return res.end("The requested URL is not an image.");
+    }
 
     // Pass the response stream to the compress function
     compress(req, res, response.data);
