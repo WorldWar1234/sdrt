@@ -1,12 +1,10 @@
-
-import http from "http";
-import https from "https";
+import axios from "axios";
 import sharp from "sharp";
 
 // Constants
 const DEFAULT_QUALITY = 80;
 
-export function fetchImageAndHandle(req, res) {
+export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.send("bandwidth-hero-proxy");
@@ -19,12 +17,15 @@ export function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  // Determine the protocol and use the correct client
-  const client = req.params.url.startsWith("https") ? https : http;
+  try {
+    const response = await axios({
+      method: "get",
+      url: req.params.url,
+      responseType: "stream",
+    });
 
-  const request = client.request(req.params.url, (response) => {
-    if (response.statusCode >= 400) {
-      res.statusCode = response.statusCode;
+    if (response.status >= 400) {
+      res.statusCode = response.status;
       return res.end("Failed to fetch the image.");
     }
 
@@ -37,16 +38,12 @@ export function fetchImageAndHandle(req, res) {
     }
 
     // Pass the response stream to the compress function
-    compress(req, res, response);
-  });
-
-  request.on("error", (err) => {
+    compress(req, res, response.data);
+  } catch (err) {
     console.error("Error fetching image:", err.message);
     res.statusCode = 500;
     res.end("Failed to fetch the image.");
-  });
-
-  request.end();
+  }
 }
 
 // Compress function with piping
