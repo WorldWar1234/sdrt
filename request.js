@@ -1,36 +1,10 @@
-import axios from 'axios';
-import { createHTTP2Adapter } from 'axios-http2-adapter';
-import http2 from 'http2-wrapper';
-import sharp from 'sharp';
+import http2 from "http2";
+import sharp from "sharp";
 
 // Constants
 const DEFAULT_QUALITY = 80;
 
-// Configure axios to use the HTTP/2 adapter with specific options
-const adapterConfig = {
-  agent: new http2.Agent({
-    maxSessions: 10,
-    maxDeflateDynamicTableSize: 8192,
-    maxHeaderListPairs: 256,
-    maxOutstandingPings: 5,
-    maxReservedRemoteStreams: 10,
-    maxSendHeaderBlockLength: 16384,
-    paddingStrategy: 1,
-    peerMaxConcurrentStreams: 100,
-    selectPadding: 8,
-    settings: {
-      headerTableSize: 65536,
-      enablePush: false,
-      maxConcurrentStreams: 100,
-    },
-    timeout: 30000, // 30 seconds
-  }),
-  force: true // Force HTTP/2 without ALPN check - adapter will not check whether the endpoint supports http2 before the request
-};
-
-axios.defaults.adapter = createHTTP2Adapter(adapterConfig);
-
-export async function fetchImageAndHandle(req, res) {
+export function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.send("bandwidth-hero-proxy");
@@ -43,33 +17,41 @@ export async function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  try {
-    const response = await axios({
-      method: "get",
-      url: req.params.url,
-      responseType: "stream",
-    });
+  // Determine the protocol and use the correct client
+  const client = http2.connect(req.params.url.startsWith("https") ? "https://" + new URL(req.params.url).host : "http://" + new URL(req.params.url).host);
 
-    if (response.status >= 400) {
-      res.statusCode = response.status;
+  const request = client.request({
+    [http2.constants.HTTP2_HEADER_METHOD]: http2.constants.HTTP2_METHOD_GET,
+    [http2.constants.HTTP2_HEADER_PATH]: new URL(req.params.url).pathname + new URL(req.params.url).search,
+    [http2.constants.HTTP2_HEADER_SCHEME]: req.params.url.startsWith("https") ? "https" : "http",
+    [http2.constants.HTTP2_HEADER_AUTHORITY]: new URL(req.params.url).host
+  });
+
+  request.on("response", (headers, flags) => {
+    if (headers[http2.constants.HTTP2_HEADER_STATUS] >= 400) {
+      res.statusCode = headers[http2.constants.HTTP2_HEADER_STATUS];
       return res.end("Failed to fetch the image.");
     }
 
-    req.params.originType = response.headers["content-type"];
-    req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
+    req.params.originType = headers[http2.constants.HTTP2_HEADER_CONTENT_TYPE];
+    req.params.originSize = parseInt(headers[http2.constants.HTTP2_HEADER_CONTENT_LENGTH], 10) || 0;
 
-   /* if (!req.params.originType.startsWith("image")) {
+    if (!req.params.originType.startsWith("image")) {
       res.statusCode = 400;
       return res.end("The requested URL is not an image.");
-    }*/
+    }
 
     // Pass the response stream to the compress function
-    compress(req, res, response.data);
-  } catch (err) {
+    compress(req, res, request);
+  });
+
+  request.on("error", (err) => {
     console.error("Error fetching image:", err.message);
     res.statusCode = 500;
     res.end("Failed to fetch the image.");
-  }
+  });
+
+  request.end();
 }
 
 // Compress function with piping
