@@ -61,24 +61,25 @@ export async function fetchImageAndHandle(req, res) {
     quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
   };
 
-  try {
-    const response = await fetch(req.params.url);
-    if (!response.ok) {
-      return res.status(response.status).send('Failed to fetch the image.');
-    }
+  fetch(req.params.url)
+    .then(origin => {
+        if (!origin.ok) {
+            throw err;
+        }
 
-    req.params.originType = response.headers.get('content-type');
-    req.params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
+        req.params.originType = origin.headers.get('content-type') || '';
+        res.setHeader('content-encoding', 'identity');
 
-    if (shouldCompress(req)) {
-      await compress(req, res, response.body);
-    } else {
-     // res.setHeader('Content-Type', req.params.originType);
+        if (shouldCompress(req)) {
+            compress(req, res, origin.body);
+        } else {
+     res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      response.body.pipe(res);
-    }
-  } catch (error) {
-    console.error('Error fetching image:', error.message);
-    res.status(500).send('Failed to fetch the image.');
-  }
+      origin.body.pipe(res);
+        }
+    })
+    .catch(err => {
+        console.error('Proxy error:', err);
+        res.status(500).send('Internal Server Error');
+    });
 }
