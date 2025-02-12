@@ -27,6 +27,7 @@ async function compress(req, res, inputBuffer) {
     if (metadata.height > MAX_HEIGHT) {
       sharpInstance.resize({ height: MAX_HEIGHT });
     }
+    sharpInstance.sharpen(0.5);
 
     if (req.params.grayscale) {
       sharpInstance.grayscale();
