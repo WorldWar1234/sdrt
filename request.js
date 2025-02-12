@@ -62,43 +62,22 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await axios.get(req.params.url, {
-      responseType: 'stream',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
-        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive',
-        // Explicitly set only the headers you need
-      },
-      transformRequest: [(data, headers) => {
-        // Pick only the headers you want to include
-        const allowedHeaders = ['User-Agent', 'Accept', 'Accept-Language', 'Connection'];
-        Object.keys(headers).forEach(key => {
-          if (!allowedHeaders.includes(key)) {
-            delete headers[key];
-          }
-        });
-        return data;
-      }]
-    });
+    const { data, headers } = await axios.get(imageUrl, { responseType: 'stream' });
 
-    req.params.originType = response.headers['content-type'];
-    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
-
-    if (response.status >= 400) {
-      return res.status(response.status).send('Failed to fetch the image.');
-    }
+    const originType = headers['content-type'];
+    const originSize = parseInt(headers['content-length'], 10) || 0;
 
     if (shouldCompress(req)) {
-      await compress(req, res, response.data);
+      compress(data, req, res);
+
+      
     } else {
-   //   res.setHeader('Content-Type', req.params.originType);
-   //   res.setHeader('Content-Length', req.params.originSize);
-      response.data.pipe(res);
+      res.setHeader('Content-Type', originType);
+      res.setHeader('Content-Length', originSize);
+      data.pipe(res);
     }
   } catch (error) {
-    console.error('Error fetching image:', error.message);
-    res.status(500).send('Failed to fetch the image.');
+    console.error("Error fetching image:", error.message);
+    res.status(500).send("Internal server error.");
   }
 }
