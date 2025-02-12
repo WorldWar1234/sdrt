@@ -1,28 +1,8 @@
-import fetch from 'node-fetch';
-import http2 from 'http2-wrapper';
-import sharp from 'sharp';
+import fetch from "node-fetch";
+import sharp from "sharp";
 
 // Constants
 const DEFAULT_QUALITY = 80;
-
-// Configure fetch to use the HTTP/2 adapter with specific options
-const agent = new http2.Agent({
-  maxSessions: 10,
-  maxDeflateDynamicTableSize: 8192,
-  maxHeaderListPairs: 256,
-  maxOutstandingPings: 5,
-  maxReservedRemoteStreams: 10,
-  maxSendHeaderBlockLength: 16384,
-  paddingStrategy: 1,
-  peerMaxConcurrentStreams: 100,
-  selectPadding: 8,
-  settings: {
-    headerTableSize: 65536,
-    enablePush: false,
-    maxConcurrentStreams: 100,
-  },
-  timeout: 30000, // 30 seconds
-});
 
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
@@ -38,26 +18,17 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await fetch(req.params.url, {
-      method: "GET",
-      agent,
-    });
+    const response = await fetch(req.params.url);
 
     if (!response.ok) {
       res.statusCode = response.status;
       return res.end("Failed to fetch the image.");
     }
 
-    const contentType = response.headers.get("content-type");
-    const contentLength = response.headers.get("content-length");
+    req.params.originType = response.headers.get("content-type");
+    req.params.originSize = parseInt(response.headers.get("content-length"), 10) || 0;
 
-    req.params.originType = contentType;
-    req.params.originSize = parseInt(contentLength, 10) || 0;
-
-    // Log the Content-Type header for debugging
-    console.log("Content-Type:", req.params.originType);
-
-    if (!req.params.originType || !req.params.originType.startsWith("image")) {
+    if (!req.params.originType.startsWith("image")) {
       res.statusCode = 400;
       return res.end("The requested URL is not an image.");
     }
