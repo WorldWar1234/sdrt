@@ -1,34 +1,8 @@
-import axios from 'axios';
-import { createHTTP2Adapter } from 'axios-http2-adapter';
-import http2 from 'http2-wrapper';
-import sharp from 'sharp';
+import axios from "axios";
+import sharp from "sharp";
 
 // Constants
 const DEFAULT_QUALITY = 80;
-
-// Configure axios to use the HTTP/2 adapter with specific options
-const adapterConfig = {
-  agent: new http2.Agent({
-    maxSessions: 10,
-    maxDeflateDynamicTableSize: 8192,
-    maxHeaderListPairs: 256,
-    maxOutstandingPings: 5,
-    maxReservedRemoteStreams: 10,
-    maxSendHeaderBlockLength: 16384,
-    paddingStrategy: 1,
-    peerMaxConcurrentStreams: 100,
-    selectPadding: 8,
-    settings: {
-      headerTableSize: 65536,
-      enablePush: false,
-      maxConcurrentStreams: 100,
-    },
-    timeout: 30000, // 30 seconds
-  }),
-  force: true // Force HTTP/2 without ALPN check - adapter will not check whether the endpoint supports http2 before the request
-};
-
-axios.defaults.adapter = createHTTP2Adapter(adapterConfig);
 
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
@@ -55,17 +29,13 @@ export async function fetchImageAndHandle(req, res) {
       return res.end("Failed to fetch the image.");
     }
 
-    // Explicitly check and log the headers
-    const contentType = response.headers['content-type'];
-    console.log('Content-Type:', contentType);
+    req.params.originType = response.headers["content-type"];
+    req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
 
-    if (!contentType || !contentType.startsWith('image')) {
+    if (!req.params.originType.startsWith("image")) {
       res.statusCode = 400;
       return res.end("The requested URL is not an image.");
     }
-
-    req.params.originType = contentType;
-    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     // Pass the response stream to the compress function
     compress(req, res, response.data);
