@@ -1,8 +1,5 @@
 import axios from 'axios';
 import sharp from 'sharp';
-import { createHTTP2Adapter } from 'axios-http2-adapter';
-// Configure axios to use the HTTP/2 adapter globally
-axios.defaults.adapter = createHTTP2Adapter();
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -62,8 +59,8 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
         .on('data', (chunk) => {
-          const buffer = Buffer.from(chunk); // Convert chunk to buffer
-          res.write(buffer); // Send the buffer chunk
+          //const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(chunk); // Send the buffer chunk
         })
         .on('end', () => {
           res.end(); // Ensure the response ends after all chunks are sent
