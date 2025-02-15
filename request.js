@@ -1,8 +1,12 @@
-import fetch from "node-fetch";
-import sharp from "sharp";
+import axios from 'axios';
+import { createHTTP2Adapter } from 'axios-http2-adapter';
+import sharp from 'sharp';
 
 // Constants
 const DEFAULT_QUALITY = 80;
+
+// Configure axios to use the HTTP/2 adapter globally
+axios.defaults.adapter = createHTTP2Adapter();
 
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
@@ -18,15 +22,20 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await fetch(req.params.url);
+    const response = await axios({
+      method: "get",
+      url: req.params.url,
+      responseType: "stream",
+    });
 
-    if (!response.ok) {
+    if (response.status >= 400) {
       res.statusCode = response.status;
       return res.end("Failed to fetch the image.");
     }
+    res.setHeader('content-encoding', 'identity');
 
-    req.params.originType = response.headers.get("content-type");
-    req.params.originSize = parseInt(response.headers.get("content-length"), 10) || 0;
+    req.params.originType = response.headers['content-type'] || '';
+    req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
     console.log("Content-Type:", req.params.originType);
 
     if (!req.params.originType.startsWith("image")) {
@@ -35,7 +44,7 @@ export async function fetchImageAndHandle(req, res) {
     }
 
     // Pass the response stream to the compress function
-    compress(req, res, response.body);
+    compress(req, res, response.data);
   } catch (err) {
     console.error("Error fetching image:", err.message);
     res.statusCode = 500;
