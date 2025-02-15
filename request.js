@@ -1,34 +1,8 @@
-import axios from 'axios';
-import { createHTTP2Adapter } from 'axios-http2-adapter';
-import http2 from 'http2-wrapper';
-import sharp from 'sharp';
+import fetch from "node-fetch";
+import sharp from "sharp";
 
 // Constants
 const DEFAULT_QUALITY = 80;
-
-// Configure axios to use the HTTP/2 adapter with specific options
-const adapterConfig = {
-  agent: new http2.Agent({
-    maxSessions: 10,
-    maxDeflateDynamicTableSize: 8192,
-    maxHeaderListPairs: 256,
-    maxOutstandingPings: 5,
-    maxReservedRemoteStreams: 10,
-    maxSendHeaderBlockLength: 16384,
-    paddingStrategy: 1,
-    peerMaxConcurrentStreams: 100,
-    selectPadding: 8,
-    settings: {
-      headerTableSize: 65536,
-      enablePush: false,
-      maxConcurrentStreams: 100,
-    },
-    timeout: 30000, // 30 seconds
-  }),
-  force: true // Force HTTP/2 without ALPN check - adapter will not check whether the endpoint supports http2 before the request
-};
-
-axios.defaults.adapter = createHTTP2Adapter(adapterConfig);
 
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
@@ -44,30 +18,24 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await axios({
-      method: "get",
-      url: req.params.url,
-      responseType: "stream",
-    });
+    const response = await fetch(req.params.url);
 
-    if (response.status >= 400) {
+    if (!response.ok) {
       res.statusCode = response.status;
       return res.end("Failed to fetch the image.");
     }
 
-    req.params.originType = response.headers["content-type"];
-    req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
-
-    // Log the Content-Type header for debugging
+    req.params.originType = response.headers.get("content-type");
+    req.params.originSize = parseInt(response.headers.get("content-length"), 10) || 0;
     console.log("Content-Type:", req.params.originType);
 
-  /*  if (!req.params.originType || !req.params.originType.startsWith("image")) {
+    if (!req.params.originType.startsWith("image")) {
       res.statusCode = 400;
       return res.end("The requested URL is not an image.");
-    }*/
+    }
 
     // Pass the response stream to the compress function
-    compress(req, res, response.data);
+    compress(req, res, response.body);
   } catch (err) {
     console.error("Error fetching image:", err.message);
     res.statusCode = 500;
