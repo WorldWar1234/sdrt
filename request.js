@@ -1,5 +1,8 @@
 import axios from 'axios';
 import sharp from 'sharp';
+import { createHTTP2Adapter } from 'axios-http2-adapter';
+// Configure axios to use the HTTP/2 adapter globally
+axios.defaults.adapter = createHTTP2Adapter();
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
