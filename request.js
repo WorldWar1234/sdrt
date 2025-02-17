@@ -49,7 +49,7 @@ export async function fetchImageAndHandle(req, res) {
 // Compress function with piping
 function compress(req, res, inputStream) {
   const format = req.params.webp ? "webp" : "jpeg";
-  const sharpInstance = sharp({ unlimited: true, animated: false });
+  const sharpInstance = sharp({ unlimited: false, animated: false });
 
   inputStream
     .pipe(sharpInstance) // Pipe input stream to Sharp for processing
