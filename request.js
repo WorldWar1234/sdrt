@@ -73,7 +73,7 @@ export async function fetchImageAndHandle(req, res) {
     if (shouldCompress(req)) {
       await compress(req, res, response.body);
     } else {
-      res.setHeader('Content-Type', req.params.originType);
+      //res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
       response.body.pipe(res);
     }
