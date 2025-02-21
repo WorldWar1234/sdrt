@@ -31,7 +31,7 @@ function compress(req, res, inputStream) {
   sharp.cache(false);
  /* sharp.concurrency(1);
   sharp.simd(true);*/
-  const format = 'jpeg';
+  const format = "jpeg";
   const sharpInstance = sharp({ unlimited: true, animated: false, limitInputPixels: false });
 
   inputStream.pipe(sharpInstance); // Pipe input stream to Sharp for processing
@@ -51,7 +51,7 @@ function compress(req, res, inputStream) {
       // Pipe the processed image directly to the response
       res.setHeader('Content-Type', `image/${format}`);
       sharpInstance
-        .toFormat(format, { quality: req.params.quality, chromaSubsampling: '4:4:4')
+        .toFormat(format, { quality: req.params.quality, chromaSubsampling: "4:4:4")
         .on('info', (info) => {
           // Set headers for the compressed image
           res.setHeader('X-Original-Size', req.params.originSize);
