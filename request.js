@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import needle from 'needle';
 import sharp from 'sharp';
 
 // Constants
@@ -58,11 +58,18 @@ function compress(req, res, inputStream) {
           res.setHeader('X-Processed-Size', info.size);
           res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
-        .pipe(res);
+        .on('data', (chunk) => {
+          const buffer = Buffer.from(chunk); // Convert chunk to buffer
+          res.write(buffer); // Send the buffer chunk
+        })
+        .on('end', () => {
+          res.end(); // Ensure the response ends after all chunks are sent
+        });
     })
     .catch((err) => {
       console.error('Error fetching metadata:', err.message);
-      res.status(500).send('Failed to fetch image metadata.');
+      res.statusCode = 500;
+      res.end('Failed to fetch image metadata.');
     });
 }
 
@@ -80,26 +87,34 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Fetch the image using node-fetch
-    const response = await fetch(req.params.url);
-    
-    if (!response.ok) {
-      return res.status(response.status).send('Failed to fetch the image.');
-    }
+    // Use needle to stream the image
+    const stream = needle.get(req.params.url);
 
-    // Extract headers
-    req.params.originType = response.headers.get('content-type');
-    req.params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
+    // Handle response headers
+    stream.on('header', (statusCode, headers) => {
+      req.params.originType = headers['content-type'];
+      req.params.originSize = parseInt(headers['content-length'], 10) || 0;
 
-    if (shouldCompress(req)) {
-      // Compress the stream
-      compress(req, res, response.body);
-    } else {
-      // Stream the original image to the response if compression is not needed
-      res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);
-      response.body.pipe(res);
-    }
+      if (statusCode >= 400) {
+        return res.status(statusCode).send('Failed to fetch the image.');
+      }
+
+      if (shouldCompress(req)) {
+        // Compress the stream
+        compress(req, res, stream);
+      } else {
+        // Stream the original image to the response if compression is not needed
+        res.setHeader('Content-Type', req.params.originType);
+        res.setHeader('Content-Length', req.params.originSize);
+        stream.pipe(res);
+      }
+    });
+
+    // Handle errors
+    stream.on('error', (error) => {
+      console.error('Error fetching image:', error.message);
+      res.status(500).send('Failed to fetch the image.');
+    });
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
