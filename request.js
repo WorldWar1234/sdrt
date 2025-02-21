@@ -1,4 +1,4 @@
-import axios from "axios";
+import got from "got";
 import sharp from "sharp";
 
 // Constants
@@ -18,29 +18,38 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    const response = await axios({
+    // Use got.stream to get a readable stream
+    const imageStream = got.stream(req.params.url, {
       method: "get",
-      url: req.params.url,
-      responseType: "stream",
     });
 
-    if (response.status >= 400) {
-      res.statusCode = response.status;
-      return res.end("Failed to fetch the image.");
-    }
+    // Listen for the response event to access headers
+    imageStream.on("response", (response) => {
+      if (response.statusCode >= 400) {
+        res.statusCode = response.statusCode;
+        return res.end("Failed to fetch the image.");
+      }
 
-    req.params.originType = response.headers["content-type"];
-    req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
+      req.params.originType = response.headers["content-type"];
+      req.params.originSize = parseInt(response.headers["content-length"], 10) || 0;
 
-    if (!req.params.originType.startsWith("image")) {
-      res.statusCode = 400;
-      return res.end("The requested URL is not an image.");
-    }
+      if (!req.params.originType.startsWith("image")) {
+        res.statusCode = 400;
+        return res.end("The requested URL is not an image.");
+      }
 
-    // Pass the response stream to the compress function
-    compress(req, res, response.data);
+      // Pass the stream to the compress function
+      compress(req, res, imageStream);
+    });
+
+    // Handle errors during the stream
+    imageStream.on("error", (err) => {
+      console.error("Error fetching image:", err.message);
+      res.statusCode = 500;
+      res.end("Failed to fetch the image.");
+    });
   } catch (err) {
-    console.error("Error fetching image:", err.message);
+    console.error("Error setting up stream:", err.message);
     res.statusCode = 500;
     res.end("Failed to fetch the image.");
   }
@@ -73,11 +82,11 @@ function compress(req, res, inputStream) {
 
       // Pipe the processed image directly to the response
       res.setHeader("Content-Type", `image/${format}`);
-      sharpInstance.toFormat(format, { quality: req.params.quality, effort:0 }).pipe(res);
+      sharpInstance.toFormat(format, { quality: req.params.quality, effort: 0 }).pipe(res);
     })
     .catch((err) => {
       console.error("Error fetching metadata:", err.message);
       res.statusCode = 500;
       res.end("Failed to fetch image metadata.");
     });
-}
+    }
