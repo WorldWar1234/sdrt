@@ -15,7 +15,7 @@
     "sharp": "^0.33.5",
     "node-fetch": "2.7.0",
     "axios":"1.7.9",
-    "got": "^14.4.6"
+    "needle": "^3.3.1"
   },
   "engines": {
     "node": "22.x"
