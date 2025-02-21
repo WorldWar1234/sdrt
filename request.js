@@ -31,7 +31,7 @@ function compress(req, res, inputStream) {
   sharp.cache(false);
   sharp.concurrency(1);
   sharp.simd(true);
-  const format = req.params.webp ? 'webp' : 'jpeg';
+  const format = 'jpeg';
   const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
   inputStream.pipe(sharpInstance); // Pipe input stream to Sharp for processing
