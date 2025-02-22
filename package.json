@@ -13,9 +13,9 @@
   "dependencies": {
     "express": "4.21.2",
     "sharp": "^0.33.5",
-    "node-fetch": "2.7.0",
+    "node-fetch": "3.3.2",
     "axios":"1.7.9",
-    "needle": "^3.3.1"
+    "undici": "^7.3.0"
   },
   "engines": {
     "node": "22.x"
