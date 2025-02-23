@@ -1,4 +1,4 @@
-import fetch from "node-fetch";
+import axios from "axios";
 import sharp from "sharp";
 
 // Constants
@@ -80,28 +80,32 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Fetch the image using node-fetch
-    const response = await fetch(req.params.url);
-    
-    if (!response.ok) {
+    // Fetch the image using axios
+    const response = await axios({
+      method: 'get',
+      url: req.params.url,
+      responseType: 'stream'
+    });
+
+    if (response.status !== 200) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
 
     // Extract headers
-    req.params.originType = response.headers.get('content-type');
-    req.params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
+    req.params.originType = response.headers['content-type'];
+    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     if (shouldCompress(req)) {
       // Compress the stream
-      compress(req, res, response.body);
+      compress(req, res, response.data);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      response.body.pipe(res);
+      response.data.pipe(res);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
   }
-}
+                           }
