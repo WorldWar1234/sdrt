@@ -13,9 +13,7 @@
   "dependencies": {
     "express": "4.21.2",
     "sharp": "^0.33.5",
-    "node-fetch": "3.3.2",
-    "fetch-h2":"3.0.2",
-    "undici": "^7.3.0"
+    "node-fetch": "3.3.2"
   },
   "engines": {
     "node": "22.x"
