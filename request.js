@@ -1,128 +1,107 @@
-import { createClient } from "fetch-h2";
+import fetch from "node-fetch";
 import sharp from "sharp";
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
-const MAX_HEIGHT = 16383;
+const MAX_HEIGHT = 16383; // Resize if height exceeds this value
 
-// Create HTTP/2 client with connection pooling
-const client = createClient({
-  session: {
-    maxReservedRemoteStreams: 100, // Concurrent streams per connection
-  },
-});
-
-// Compression decision logic
+// Utility function to determine if compression is needed
 function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
 
-  if (!originType?.startsWith('image')) return false;
+  if (!originType.startsWith('image')) return false;
   if (originSize === 0) return false;
   if (req.headers.range) return false;
-  
   if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
-  if (!webp && (originType.endsWith('png') || originType.endsWith('gif')) {
-    return originSize >= MIN_TRANSPARENT_COMPRESS_LENGTH;
+  if (
+    !webp &&
+    (originType.endsWith('png') || originType.endsWith('gif')) &&
+    originSize < MIN_TRANSPARENT_COMPRESS_LENGTH
+  ) {
+    return false;
   }
 
   return true;
 }
 
-// Image processing pipeline
+// Function to compress an image stream directly
 function compress(req, res, inputStream) {
+  sharp.cache(false);
+  sharp.concurrency(1);
+  sharp.simd(true);
   const format = 'jpeg';
-  const transformer = sharp()
-    .on('error', (err) => {
-      console.error('Sharp processing error:', err);
-      res.status(500).end();
-    });
+  const sharpInstance = sharp({ unlimited: true, animated: false, limitInputPixels: false });
 
-  inputStream.pipe(transformer);
+  inputStream.pipe(sharpInstance); // Pipe input stream to Sharp for processing
 
-  transformer.metadata()
+  // Handle metadata and apply transformations
+  sharpInstance
+    .metadata()
     .then((metadata) => {
       if (metadata.height > MAX_HEIGHT) {
-        transformer.resize({ height: MAX_HEIGHT });
+        sharpInstance.resize({ height: MAX_HEIGHT });
       }
 
       if (req.params.grayscale) {
-        transformer.grayscale();
+        sharpInstance.grayscale();
       }
 
+      // Pipe the processed image directly to the response
       res.setHeader('Content-Type', `image/${format}`);
-      transformer
-        .toFormat(format, {
-          quality: req.params.quality,
-          mozjpeg: true, // Better compression
-          effort: 0, // Fastest processing
-        })
+      sharpInstance
+        .toFormat(format, { quality: req.params.quality, effort: 0 })
         .on('info', (info) => {
+          // Set headers for the compressed image
           res.setHeader('X-Original-Size', req.params.originSize);
-          res.setHeader('X-Compressed-Size', info.size);
-          res.setHeader('X-Compression-Ratio', 
-            `${((1 - info.size/req.params.originSize) * 100).toFixed(1)}%`);
+          res.setHeader('X-Processed-Size', info.size);
+          res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
         })
         .pipe(res);
     })
     .catch((err) => {
-      console.error('Metadata error:', err);
-      res.status(500).send('Image processing failed');
+      console.error('Error fetching metadata:', err.message);
+      res.status(500).send('Failed to fetch image metadata.');
     });
 }
 
-// Main request handler
-export async function imageProxy(req, res) {
+// Function to handle image compression requests
+export async function fetchImageAndHandle(req, res) {
+  const url = req.query.url;
+  if (!url) {
+    return res.send('Image URL is required.');
+  }
+  req.params = {
+    url: decodeURIComponent(url),
+    webp: !req.query.jpeg,
+    grayscale: req.query.bw != 0,
+    quality: parseInt(req.query.l, 10) || DEFAULT_QUALITY,
+  };
+
   try {
-    const url = req.query.url;
-    if (!url) {
-      return res.send({ error: 'Missing image URL' });
-    }
-
-    const params = {
-      url: decodeURIComponent(url),
-      webp: !req.query.jpeg,
-      grayscale: req.query.bw != 0,
-      quality: Math.min(Math.max(parseInt(req.query.l, 10) || DEFAULT_QUALITY, 1), 100),
-    };
-
-    // Fetch image via HTTP/2
-    const response = await client.fetch(params.url, {
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'Image Compression Proxy/1.0',
-      },
-    });
-
+    // Fetch the image using node-fetch
+    const response = await fetch(req.params.url);
+    
     if (!response.ok) {
-      return res.status(response.statusCode).send('Image fetch failed');
+      return res.status(response.status).send('Failed to fetch the image.');
     }
 
-    // Extract metadata
-    params.originType = response.headers.get('content-type') || '';
-    params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
+    // Extract headers
+    req.params.originType = response.headers.get('content-type');
+    req.params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
 
-    // Handle compression
-    if (shouldCompress(req) {
+    if (shouldCompress(req)) {
+      // Compress the stream
       compress(req, res, response.body);
     } else {
-      res.setHeader('Content-Type', params.originType);
-      res.setHeader('Content-Length', params.originSize);
+      // Stream the original image to the response if compression is not needed
+      res.setHeader('Content-Type', req.params.originType);
+      res.setHeader('Content-Length', req.params.originSize);
       response.body.pipe(res);
     }
-
-  } catch (err) {
-    console.error('Proxy error:', err);
-    res.status(500).json({
-      error: 'Image processing failed',
-      details: err.message
-    });
+  } catch (error) {
+    console.error('Error fetching image:', error.message);
+    res.status(500).send('Failed to fetch the image.');
   }
 }
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  await client.disconnectAll();
-  process.exit(0);
-});
