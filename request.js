@@ -1,4 +1,4 @@
-import fetch from "node-fetch";
+import axios from "axios";
 import sharp from "sharp";
 
 // Constants
@@ -29,9 +29,10 @@ function shouldCompress(req) {
 // Function to compress an image stream directly
 function compress(req, res, inputStream) {
   sharp.cache(false);
+  sharp.concurrency(1);
   sharp.simd(true);
   const format = 'jpeg';
-  const sharpInstance = sharp({ unlimited: true, animated: false, limitInputPixels: false });
+  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
   inputStream.pipe(sharpInstance); // Pipe input stream to Sharp for processing
 
@@ -69,7 +70,7 @@ function compress(req, res, inputStream) {
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
-    return res.send('Image URL is required.');
+    return res.status(400).send('Image URL is required.');
   }
   req.params = {
     url: decodeURIComponent(url),
@@ -79,25 +80,29 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Fetch the image using node-fetch
-    const response = await fetch(req.params.url);
-    
-    if (!response.ok) {
+    // Fetch the image using axios
+    const response = await axios({
+      method: 'get',
+      url: req.params.url,
+      responseType: 'stream'
+    });
+
+    if (response.status !== 200) {
       return res.status(response.status).send('Failed to fetch the image.');
     }
 
     // Extract headers
-    req.params.originType = response.headers.get('content-type');
-    req.params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
+    req.params.originType = response.headers['content-type'];
+    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     if (shouldCompress(req)) {
       // Compress the stream
-      compress(req, res, response.body);
+      compress(req, res, response.data);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      response.body.pipe(res);
+      response.data.pipe(res);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
