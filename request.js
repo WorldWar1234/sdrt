@@ -1,12 +1,13 @@
-import { request } from "undici";
+import { fetch } from "fetch-h2"; // HTTP/2-enabled fetch
 import sharp from "sharp";
 
-// Constants remain the same
+// Constants (same as before)
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383;
 
+// ... (keep your `shouldCompress` and `compress` functions)
 // Utility function remains unchanged
 function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
@@ -63,11 +64,10 @@ function compress(req, res, inputStream) {
     });
 }
 
-// Updated fetch handling using undici
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
-    return res.status(400).send('Image URL is required.');
+    return res.status(400).send("Image URL is required.");
   }
   req.params = {
     url: decodeURIComponent(url),
@@ -77,29 +77,29 @@ export async function fetchImageAndHandle(req, res) {
   };
 
   try {
-    // Use undici.request instead of fetch
-    const response = await request(req.params.url, {
-      maxRedirections: 4, // Handle redirects similarly to node-fetch
+    // Fetch using HTTP/2
+    const response = await fetch(req.params.url, {
+      redirect: "follow", // Handle redirects automatically
+      h2: { /* HTTP/2-specific options */ },
     });
 
-    // Check if the status code is in the 200-299 range
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      return res.status(response.statusCode).send('Failed to fetch the image.');
+    if (!response.ok) {
+      return res.status(response.status).send("Failed to fetch image.");
     }
 
-    // Extract headers using object notation
-    req.params.originType = response.headers['content-type'];
-    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
+    // Extract headers
+    req.params.originType = response.headers.get("content-type");
+    req.params.originSize = parseInt(response.headers.get("content-length"), 10) || 0;
 
     if (shouldCompress(req)) {
       compress(req, res, response.body);
     } else {
-      res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);
-      response.body.pipe(res); // Stream the original image
+      res.setHeader("Content-Type", req.params.originType);
+      res.setHeader("Content-Length", req.params.originSize);
+      response.body.pipe(res); // Stream the HTTP/2 response
     }
   } catch (error) {
-    console.error('Error fetching image:', error.message);
-    res.status(500).send('Failed to fetch the image.');
+    console.error("HTTP/2 fetch error:", error.message);
+    res.status(500).send("Failed to fetch image.");
   }
 }
