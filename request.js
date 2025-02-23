@@ -8,6 +8,61 @@ const DEFAULT_QUALITY = 80;
 const MAX_HEIGHT = 16383;
 
 // ... (keep your `shouldCompress` and `compress` functions)
+// Utility function remains unchanged
+function shouldCompress(req) {
+  const { originType, originSize, webp } = req.params;
+
+  if (!originType.startsWith('image')) return false;
+  if (originSize === 0) return false;
+  if (req.headers.range) return false;
+  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
+  if (
+    !webp &&
+    (originType.endsWith('png') || originType.endsWith('gif')) &&
+    originSize < MIN_TRANSPARENT_COMPRESS_LENGTH
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+// compress function remains the same
+function compress(req, res, inputStream) {
+  sharp.cache(false);
+  sharp.concurrency(1);
+  sharp.simd(true);
+  const format = 'jpeg';
+  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
+
+  inputStream.pipe(sharpInstance);
+
+  sharpInstance
+    .metadata()
+    .then((metadata) => {
+      if (metadata.height > MAX_HEIGHT) {
+        sharpInstance.resize({ height: MAX_HEIGHT });
+      }
+
+      if (req.params.grayscale) {
+        sharpInstance.grayscale();
+      }
+
+      res.setHeader('Content-Type', `image/${format}`);
+      sharpInstance
+        .toFormat(format, { quality: req.params.quality, effort: 0 })
+        .on('info', (info) => {
+          res.setHeader('X-Original-Size', req.params.originSize);
+          res.setHeader('X-Processed-Size', info.size);
+          res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
+        })
+        .pipe(res);
+    })
+    .catch((err) => {
+      console.error('Error fetching metadata:', err.message);
+      res.status(500).send('Failed to fetch image metadata.');
+    });
+}
 
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
