@@ -104,8 +104,8 @@ export async function imageProxy(req, res) {
     params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
 
     // Handle compression
-    if (shouldCompress({ params, headers: req.headers })) {
-      compress({ params }, res, response.body);
+    if (shouldCompress(req) {
+      compress(req, res, response.body);
     } else {
       res.setHeader('Content-Type', params.originType);
       res.setHeader('Content-Length', params.originSize);
