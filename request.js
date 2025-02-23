@@ -80,7 +80,7 @@ export async function fetchImageAndHandle(req, res) {
     // Fetch using HTTP/2
     const response = await fetch(req.params.url, {
       redirect: "follow", // Handle redirects automatically
-      h2: { /* HTTP/2-specific options */ },
+      //h2: { /* HTTP/2-specific options */ },
     });
 
     if (!response.ok) {
