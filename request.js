@@ -27,44 +27,54 @@ function shouldCompress(req) {
 }
 
 // Function to compress an image stream directly
-function compress(req, res, inputStream) {
+async function compress(req, res, inputStream) {
   sharp.cache(false);
   sharp.concurrency(1);
   sharp.simd(true);
   const format = 'jpeg';
   const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
 
-  inputStream.pipe(sharpInstance); // Pipe input stream to Sharp for processing
+  // Set headers for the compressed image
+  res.setHeader('Content-Type', `image/${format}`);
+  res.setHeader('X-Original-Size', req.params.originSize);
 
-  // Handle metadata and apply transformations
-  sharpInstance
-    .metadata()
-    .then((metadata) => {
-      if (metadata.height > MAX_HEIGHT) {
-        sharpInstance.resize({ height: MAX_HEIGHT });
-      }
+  // Create a transform stream to handle the output
+  const transformStream = sharpInstance
+    .toFormat(format, { quality: req.params.quality, effort: 0 });
 
-      if (req.params.grayscale) {
-        sharpInstance.grayscale();
-      }
+  // Handle the 'info' event to get the processed size
+  transformStream.on('info', (info) => {
+    res.setHeader('X-Processed-Size', info.size);
+    res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
+  });
 
-      // Pipe the processed image directly to the response
-      res.setHeader('Content-Type', `image/${format}`);
-      sharpInstance
-        .toFormat(format, { quality: req.params.quality, effort: 0 })
-        .on('info', (info) => {
-          // Set headers for the compressed image
-          res.setHeader('X-Original-Size', req.params.originSize);
-          res.setHeader('X-Processed-Size', info.size);
-          res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
-        })
-        .pipe(res);
-    })
-    .catch((err) => {
-      console.error('Error fetching metadata:', err.message);
-      res.status(500).send('Failed to fetch image metadata.');
-    });
+  // Handle errors during processing
+  transformStream.on('error', (err) => {
+    console.error('Error processing image:', err.message);
+    res.status(500).send('Failed to process image.');
+  });
+
+  // Pipe the input stream to the transform stream
+  inputStream.pipe(transformStream);
+
+  // Directly write chunks to the response as they are processed
+  transformStream.on('data', (chunk) => {
+    res.write(chunk); // Write each processed chunk to the response
+  });
+
+  // When the transform stream ends, end the response
+  transformStream.on('end', () => {
+    res.end(); // Close the response
+  });
+
+  // Handle any errors from the input stream
+  inputStream.on('error', (err) => {
+    console.error('Error reading input stream:', err.message);
+    res.status(500).send('Failed to read input stream.');
+  });
 }
+
+
 
 // Function to handle image compression requests
 export async function fetchImageAndHandle(req, res) {
