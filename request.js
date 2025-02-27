@@ -29,10 +29,9 @@ function shouldCompress(req) {
 // Function to compress an image stream directly
 async function compress(req, res, inputStream) {
   sharp.cache(false);
-  sharp.concurrency(1);
   sharp.simd(true);
   const format = 'jpeg';
-  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
+  const sharpInstance = sharp({ unlimited: true, animated: false, limitInputPixels: false });
 
   // Set headers for the compressed image
   res.setHeader('Content-Type', `image/${format}`);
