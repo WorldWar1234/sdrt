@@ -1,9 +1,22 @@
-import app from "./index.js";
-import http from "http";
+import Fastify from 'fastify';
+import { fetchImageAndHandle } from './request.js'; // Adjust the path as needed
 
-const PORT = process.env.PORT || 8080;
+const fastify = Fastify({ logger: false });
 
-const server = http.createServer(app);
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+// Route to handle image compression requests
+fastify.get('/', async (req, reply) => {
+  await fetchImageAndHandle(req, reply);
 });
+
+// Start the server
+const start = async () => {
+  try {
+    await fastify.listen({ port: 3000 });
+    fastify.log.info(`Server is running on port 3000`);
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+};
+
+start();
