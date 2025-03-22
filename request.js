@@ -7,7 +7,7 @@ sharp.simd(true);
 sharp.concurrency(1);
 const pipelineAsync = promisify(pipeline);
 
-// Constants
+// Constant
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
 const DEFAULT_QUALITY = 80;
